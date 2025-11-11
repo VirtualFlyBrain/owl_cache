@@ -81,7 +81,7 @@ The proxy adds helpful headers to responses:
 
 ### Caching Behavior
 
-- **Cache TTL**: 90 days for HTTP 200, 10 minutes for 404, 1 hour for others
+- **Cache TTL**: 90 days for HTTP 200, 10 minutes for 404, errors not cached
 - **Stale-while-revalidate**: `proxy_cache_use_stale updating` + `proxy_cache_background_update on`
 - **Retry on errors**: Automatically retries failed requests (502, 503, 504, timeouts) up to 2 times
 - **Cache lock**: Prevents stampede with `proxy_cache_lock on`
@@ -142,4 +142,4 @@ Set these in your GitHub repository secrets:
 - **First Request**: Cache MISS → Query backend (~200ms) → Cache result → Return with X-Cache-Status: MISS
 - **Subsequent Requests**: Cache HIT → Return cached result (<10ms) with X-Cache-Status: HIT
 - **Expired Cache**: Return stale content immediately with X-Cache-Status: UPDATING + background refresh
-- **Backend Down**: Serve stale content with X-Cache-Status: STALE until backend recovers
+- **Backend Errors**: Forward errors to client without caching, allowing retries to succeed
