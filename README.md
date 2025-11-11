@@ -1,6 +1,70 @@
 # NGINX Caching Proxy for Owlery
 
-A pre-caching and refresh server to sit in front of Owlery to speed up slow queries.
+[![Docker Image](https://img.shields.io/badge/docker-virtualflybrain%2Fowlery--cache-blue)](https://hub.docker.com/r/virtualflybrain/owlery-cache)
+
+A high-performance caching proxy server that sits in front of OWL reasoning services to dramatically speed up query responses. Built on NGINX Alpine with 90-day cache TTL and stale-while-revalidate pattern.
+
+## Usage Examples
+
+### Basic Usage
+```bash
+# Start the proxy
+docker run -d --name owl-cache -p 80:80 virtualflybrain/owlery-cache:latest
+
+# Make a query (will be slow first time)
+curl "http://localhost/kbs/vfb/instances?object=<http://purl.obolibrary.org/obo/FBbt_00005106>"
+
+# Same query again (will be fast from cache)
+curl "http://localhost/kbs/vfb/instances?object=<http://purl.obolibrary.org/obo/FBbt_00005106>"
+```
+
+### With Docker Compose
+```yaml
+version: '3.8'
+services:
+  owl-cache:
+    image: virtualflybrain/owlery-cache:latest
+    ports:
+      - "80:80"
+    environment:
+      - UPSTREAM_SERVER=owl:8080  # For production with owl service
+```
+
+### Health Check
+```bash
+curl http://localhost/health
+# Returns: OK
+```
+
+## Configuration
+
+### Environment Variables
+
+- `UPSTREAM_SERVER`: Backend server URL (default: `owl.virtualflybrain.org:80`)
+
+### Cache Headers
+
+The proxy adds helpful headers to responses:
+
+- `X-Cache-Status`: `HIT`, `MISS`, `EXPIRED`, or `STALE`
+- `X-Cache-Key`: The cache key used for the request
+
+## Performance
+
+- **Cache TTL**: 90 days for successful responses
+- **First request**: ~200ms (backend query)
+- **Cached requests**: <10ms (from cache)
+- **Cache size**: Up to 20GB on disk
+- **Memory usage**: ~100MB for cache metadata
+
+## Docker Hub
+
+📦 **Image**: [`virtualflybrain/owlery-cache`](https://hub.docker.com/r/virtualflybrain/owlery-cache)
+
+Available tags:
+
+- `latest` - Latest stable release
+- `1.0.0` - Version 1.0.0
 
 ## Overview
 
@@ -17,7 +81,7 @@ This repository contains a custom Docker image based on NGINX Alpine that provid
 ### Runtime Services
 
 - **owlery-cache**: Custom NGINX image exposing port 80
-- **Backend service**: Named "owl" running at http://owl:8080 (configurable via UPSTREAM_SERVER env var)
+- **Backend service**: Named "owl" running at `http://owl:8080` (configurable via UPSTREAM_SERVER env var)
 - **Network**: Shared Docker network named "owlery_network"
 
 ### Networking
