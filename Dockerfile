@@ -16,4 +16,4 @@ RUN mkdir -p /var/cache/nginx && chown -R nginx:nginx /var/cache/nginx && \
 
 EXPOSE 80
 
-CMD ["/bin/sh", "-c", "envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${DNS_RESOLVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && /usr/local/bin/health-monitor.sh & nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "export UPSTREAM_SERVER=$UPSTREAM_SERVER && export CACHE_MAX_SIZE=$CACHE_MAX_SIZE && export DNS_RESOLVER=\"$DNS_RESOLVER\" && envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${DNS_RESOLVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && /usr/local/bin/health-monitor.sh & nginx -g 'daemon off;'"]
