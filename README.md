@@ -60,6 +60,7 @@ Cache key: `$request_method$request_uri`
 - GET and POST requests cached separately
 - Full URI including query parameters creates unique entries
 - Host header ignored (host-agnostic)
+- Backend cache control headers ignored to ensure caching
 
 ## Build and Deployment
 
@@ -165,7 +166,7 @@ Set these in your GitHub repository secrets:
 
 ## Expected Behavior
 
-- **First Request**: Cache MISS → Query backend → Cache result → Return with X-Cache-Status: MISS
-- **Subsequent Requests**: Cache HIT → Return cached result with X-Cache-Status: HIT
+- **First Request**: Cache MISS → Query backend (~200ms) → Cache result → Return with X-Cache-Status: MISS
+- **Subsequent Requests**: Cache HIT → Return cached result (<10ms) with X-Cache-Status: HIT
 - **Expired Cache**: Return stale content immediately with X-Cache-Status: UPDATING + background refresh
 - **Backend Down**: Serve stale content with X-Cache-Status: STALE until backend recovers
