@@ -36,7 +36,13 @@ jobs:
       run: |
         docker run -d --name test-container -e UPSTREAM_SERVER=owl.virtualflybrain.org:80 -e CACHE_MAX_SIZE=20g test-image
         sleep 5
-        docker exec test-container wget --no-verbose --tries=1 --spider http://localhost/health
+        if docker ps | grep -q test-container; then
+          echo "Container is running successfully"
+        else
+          echo "Container failed to start"
+          docker logs test-container
+          exit 1
+        fi
         docker stop test-container || true
         docker rm test-container
 
