@@ -5,6 +5,9 @@ events {
 }
 
 http {
+    resolver ${DNS_RESOLVER} valid=30s;
+    resolver_timeout 5s;
+
     upstream owlery {
         server ${UPSTREAM_SERVER};
         keepalive 16;
@@ -38,8 +41,13 @@ http {
 
         location /health {
             access_log off;
-            return 200 "OK\n";
+            proxy_pass http://owlery/;
+            proxy_connect_timeout 3s;
+            proxy_read_timeout 3s;
+            proxy_intercept_errors on;
+            error_page 500 502 503 504 =503 "UPSTREAM_UNAVAILABLE\n";
             add_header Content-Type text/plain;
+            add_header X-Upstream-Status $upstream_status;
         }
 
         location / {

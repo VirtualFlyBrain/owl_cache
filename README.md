@@ -30,22 +30,29 @@ services:
       - "80:80"
     environment:
       - UPSTREAM_SERVER=owl:8080  # For production with owl service
-      - CACHE_MAX_SIZE=1000g      # 1TB cache size for high-traffic deployments
+      - CACHE_MAX_SIZE=1t         # 1TB cache size for high-traffic deployments
+      - DNS_RESOLVER=169.254.169.250  # Rancher internal DNS (check /etc/resolv.conf)
 ```
 
 ### Health Check
 
 ```bash
 curl http://localhost/health
-# Returns: OK
+# Returns: upstream response or "UPSTREAM_UNAVAILABLE" (503) if upstream is down
+# Includes X-Upstream-Status header showing actual upstream response code
 ```
+
+The health endpoint now proxies to the upstream server to verify connectivity. If the upstream is unavailable, it returns 503 with "UPSTREAM_UNAVAILABLE".
+
+**Health Monitoring**: A background process logs warnings every 5 minutes if the upstream server becomes unreachable, but the container continues running to serve cached content.
 
 ## Configuration
 
 ### Environment Variables
 
 - `UPSTREAM_SERVER`: Backend server URL (default: `owl.virtualflybrain.org:80`)
-- `CACHE_MAX_SIZE`: Maximum cache size on disk (default: `20g`, accepts NGINX size units: `k`/`K` kilobytes, `m`/`M` megabytes, `g`/`G` gigabytes)
+- `CACHE_MAX_SIZE`: Maximum cache size on disk (default: `20g`, accepts NGINX size units like `1t` for 1TB)
+- `DNS_RESOLVER`: DNS resolver servers (default: `8.8.8.8 1.1.1.1`, space-separated list). Check `cat /etc/resolv.conf` in your container to find the correct value for your environment.
 
 ### Cache Headers
 
@@ -69,7 +76,8 @@ The proxy adds helpful headers to responses:
 - **Base image**: nginx:1.26-alpine
 - **Cache storage**: `/var/cache/nginx/owlery` with 1:2 directory levels
 - **Cache zone**: 100MB in-memory metadata zone
-- **Max cache size**: 20GB on disk (configurable via `CACHE_MAX_SIZE` environment variable, supports k/K, m/M, g/G units)
+- **Max cache size**: 20GB on disk (configurable via `CACHE_MAX_SIZE` environment variable)
+- **Health monitoring**: Background process checks upstream connectivity every 5 minutes and logs warnings
 
 ### Caching Behavior
 
@@ -83,9 +91,10 @@ The proxy adds helpful headers to responses:
 ### Networking
 
 - **Listen port**: 80
+- **DNS resolver**: Configurable via `DNS_RESOLVER` (default: Google Public DNS with 30s TTL for fast upstream IP updates). Check `cat /etc/resolv.conf` in your container for the correct value.
 - **Host-agnostic**: Ignores Host header for routing
 - **Connection pooling**: 16 keep-alive connections to backend
-- **Timeouts**: 90s connect/read/send
+- **Timeouts**: 90s connect/read/send, 3s for health checks
 
 ## Build and Deployment
 

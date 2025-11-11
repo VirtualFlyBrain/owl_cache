@@ -5,9 +5,11 @@ LABEL description="NGINX caching proxy for Owlery"
 
 ARG NGINX_CONF=nginx.conf.template
 COPY $NGINX_CONF /etc/nginx/nginx.conf.template
+COPY health-monitor.sh /usr/local/bin/health-monitor.sh
 
-RUN mkdir -p /var/cache/nginx && chown -R nginx:nginx /var/cache/nginx
+RUN mkdir -p /var/cache/nginx && chown -R nginx:nginx /var/cache/nginx && \
+    chmod +x /usr/local/bin/health-monitor.sh
 
 EXPOSE 80
 
-CMD ["/bin/sh", "-c", "UPSTREAM_SERVER=${UPSTREAM_SERVER:-owl.virtualflybrain.org:80} CACHE_MAX_SIZE=${CACHE_MAX_SIZE:-20g} envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "UPSTREAM_SERVER=${UPSTREAM_SERVER:-owl.virtualflybrain.org:80} CACHE_MAX_SIZE=${CACHE_MAX_SIZE:-20g} DNS_RESOLVER=${DNS_RESOLVER:-8.8.8.8 1.1.1.1} envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${DNS_RESOLVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && /usr/local/bin/health-monitor.sh & nginx -g 'daemon off;'"]
