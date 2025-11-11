@@ -47,7 +47,7 @@ jobs:
         docker rm test-container
 
     - name: Build Docker image
-      run: docker build . --file Dockerfile --tag virtualflybrain/owlery-cache:${{ steps.meta.outputs.tag }}
+      run: docker build . --file Dockerfile --tag virtualflybrain/owl_cache:${{ steps.meta.outputs.tag }}
 
     - name: Login to Docker Hub
       uses: docker/login-action@v3
@@ -56,4 +56,4 @@ jobs:
         password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
     - name: Push Docker image
-      run: docker push virtualflybrain/owlery-cache:${{ steps.meta.outputs.tag }}
+      run: docker push virtualflybrain/owl_cache:${{ steps.meta.outputs.tag }}

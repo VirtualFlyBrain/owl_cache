@@ -1,6 +1,6 @@
 # NGINX Caching Proxy for Owlery
 
-[![Docker Image](https://img.shields.io/badge/docker-virtualflybrain%2Fowlery--cache-blue)](https://hub.docker.com/r/virtualflybrain/owlery-cache)
+[![Docker Image](https://img.shields.io/badge/docker-virtualflybrain%2Fowl_cache-blue)](https://hub.docker.com/r/virtualflybrain/owl_cache)
 
 A high-performance caching proxy server that sits in front of OWL reasoning services to dramatically speed up query responses. Built on NGINX Alpine with 90-day cache TTL and stale-while-revalidate pattern.
 
@@ -10,7 +10,7 @@ A high-performance caching proxy server that sits in front of OWL reasoning serv
 
 ```bash
 # Start the proxy
-docker run -d --name owl-cache -p 80:80 virtualflybrain/owlery-cache:latest
+docker run -d --name owl-cache -p 80:80 virtualflybrain/owl_cache:latest
 
 # Make a query (will be slow first time)
 curl "http://localhost/kbs/vfb/instances?object=<http://purl.obolibrary.org/obo/FBbt_00005106>"
@@ -25,7 +25,7 @@ curl "http://localhost/kbs/vfb/instances?object=<http://purl.obolibrary.org/obo/
 version: '3.8'
 services:
   owl-cache:
-    image: virtualflybrain/owlery-cache:latest
+    image: virtualflybrain/owl_cache:latest
     ports:
       - "80:80"
     environment:
@@ -92,7 +92,7 @@ The proxy adds helpful headers to responses:
 
 ```bash
 # Pull image
-docker pull virtualflybrain/owlery-cache:latest
+docker pull virtualflybrain/owl_cache:latest
 
 # Create cache directory
 mkdir -p /cache
