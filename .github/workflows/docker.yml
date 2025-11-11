@@ -1,0 +1,55 @@
+name: Docker Image CI
+
+on:
+  push:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Extract metadata
+      id: meta
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          TAG=${GITHUB_REF#refs/tags/}
+        else
+          TAG=${GITHUB_REF#refs/heads/}
+        fi
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Test NGINX configuration
+      run: |
+        sed 's/${UPSTREAM_SERVER}/127.0.0.1:8080/' nginx.conf.template > test-nginx.conf
+        docker run --rm -v $(pwd)/test-nginx.conf:/tmp/nginx.conf nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
+
+    - name: Build test Docker image
+      run: |
+        sed 's/${UPSTREAM_SERVER}/127.0.0.1:8080/' nginx.conf.template > nginx-test.conf
+        docker build . --file Dockerfile --tag test-image --build-arg NGINX_CONF=nginx-test.conf
+
+    - name: Test Docker image
+      run: |
+        docker run -d --name test-container test-image
+        sleep 5
+        docker exec test-container wget --no-verbose --tries=1 --spider http://localhost/health
+        docker stop test-container
+        docker rm test-container
+
+    - name: Build Docker image
+      run: docker build . --file Dockerfile --tag virtualflybrain/owlery-cache:${{ steps.meta.outputs.tag }}
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_HUB_USER }}
+        password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+    - name: Push Docker image
+      run: docker push virtualflybrain/owlery-cache:${{ steps.meta.outputs.tag }}

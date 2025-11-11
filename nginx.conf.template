@@ -1,0 +1,59 @@
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream owlery {
+        server ${UPSTREAM_SERVER};
+        keepalive 16;
+    }
+
+    log_format cache '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for" '
+                        '$upstream_cache_status $request_time $upstream_response_time';
+
+    access_log /dev/stdout cache;
+    error_log /dev/stderr warn;
+
+    proxy_cache_path /var/cache/nginx/owlery levels=1:2 keys_zone=owlery_cache:100m max_size=20g inactive=7776000s use_temp_path=off;
+
+    proxy_cache_key "$request_method$request_uri";
+    proxy_cache_min_uses 1;
+    proxy_cache_revalidate on;
+    proxy_cache_methods GET HEAD;
+
+    proxy_cache_valid 200 7776000s;
+    proxy_cache_valid 404 600s;
+    proxy_cache_valid any 3600s;
+
+    proxy_cache_use_stale updating;
+    proxy_cache_background_update on;
+    proxy_cache_lock on;
+
+    server {
+        listen 80;
+
+        location /health {
+            access_log off;
+            return 200 "OK\n";
+            add_header Content-Type text/plain;
+        }
+
+        location / {
+            proxy_pass http://owlery;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_connect_timeout 90s;
+            proxy_read_timeout 90s;
+            proxy_send_timeout 90s;
+            proxy_set_header Host $host;
+            add_header X-Cache-Status $upstream_cache_status;
+            add_header X-Cache-Key "$request_method$request_uri";
+            proxy_ignore_headers Cache-Control Expires Set-Cookie;
+            proxy_cache owlery_cache;
+        }
+    }
+}

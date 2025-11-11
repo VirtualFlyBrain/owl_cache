@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  owlery-cache:
+    image: virtualflybrain/owlery-cache:latest
+    container_name: owlery-cache
+    restart: unless-stopped
+    environment:
+      - UPSTREAM_SERVER=owl:8080
+    volumes:
+      - /cache:/var/cache/nginx
+    networks:
+      - owlery_network
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  owlery_network:
+    driver: bridge
