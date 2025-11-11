@@ -26,7 +26,7 @@ jobs:
 
     - name: Test NGINX configuration
       run: |
-        UPSTREAM_SERVER=127.0.0.1:8080 envsubst '${UPSTREAM_SERVER}' < nginx.conf.template > test-nginx.conf
+        UPSTREAM_SERVER=owl.virtualflybrain.org:80 CACHE_MAX_SIZE=20g envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE}' < nginx.conf.template > test-nginx.conf
         docker run --rm -v $(pwd)/test-nginx.conf:/tmp/nginx.conf nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
 
     - name: Build test Docker image
