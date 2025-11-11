@@ -26,7 +26,7 @@ jobs:
 
     - name: Test NGINX configuration
       run: |
-        UPSTREAM_SERVER=owl.virtualflybrain.org:80 CACHE_MAX_SIZE=20g envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE}' < nginx.conf.template > test-nginx.conf
+        UPSTREAM_SERVER=owl.virtualflybrain.org:80 CACHE_MAX_SIZE=20g DNS_RESOLVER="8.8.8.8 1.1.1.1" envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${DNS_RESOLVER}' < nginx.conf.template > test-nginx.conf
         docker run --rm -v $(pwd)/test-nginx.conf:/tmp/nginx.conf nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
 
     - name: Build test Docker image
@@ -34,7 +34,7 @@ jobs:
 
     - name: Test Docker image
       run: |
-        docker run -d --name test-container -e UPSTREAM_SERVER=owl.virtualflybrain.org:80 -e CACHE_MAX_SIZE=20g test-image
+        docker run -d --name test-container -e UPSTREAM_SERVER=owl.virtualflybrain.org:80 -e CACHE_MAX_SIZE=20g -e DNS_RESOLVER="8.8.8.8 1.1.1.1" test-image
         sleep 5
         if docker ps | grep -q test-container; then
           echo "Container is running successfully"
