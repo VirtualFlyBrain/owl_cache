@@ -34,7 +34,7 @@ jobs:
 
     - name: Test Docker image
       run: |
-        docker run -d --name test-container test-image
+        docker run -d --name test-container -e UPSTREAM_SERVER=owl.virtualflybrain.org:80 -e CACHE_MAX_SIZE=20g test-image
         sleep 5
         docker exec test-container wget --no-verbose --tries=1 --spider http://localhost/health
         docker stop test-container || true
