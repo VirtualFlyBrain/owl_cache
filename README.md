@@ -75,6 +75,7 @@ The proxy adds helpful headers to responses:
 
 - **Cache TTL**: 90 days for HTTP 200, 10 minutes for 404, 1 hour for others
 - **Stale-while-revalidate**: `proxy_cache_use_stale updating` + `proxy_cache_background_update on`
+- **Retry on errors**: Automatically retries failed requests (502, 503, 504, timeouts) up to 2 times
 - **Cache lock**: Prevents stampede with `proxy_cache_lock on`
 - **Cache key**: `$request_method$request_uri`
 - **Ignores backend headers**: `Cache-Control`, `Expires`, `Set-Cookie`

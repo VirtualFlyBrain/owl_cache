@@ -50,6 +50,9 @@ http {
             proxy_read_timeout 90s;
             proxy_send_timeout 90s;
             proxy_set_header Host $host;
+            proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+            proxy_next_upstream_timeout 30s;
+            proxy_next_upstream_tries 2;
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
