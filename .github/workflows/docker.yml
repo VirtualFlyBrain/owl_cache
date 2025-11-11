@@ -30,7 +30,7 @@ jobs:
         docker run --rm -v $(pwd)/test-nginx.conf:/tmp/nginx.conf nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
 
     - name: Build test Docker image
-      run: docker build . --file Dockerfile --tag test-image
+      run: docker build --no-cache . --file Dockerfile --tag test-image
 
     - name: Test Docker image
       run: |
