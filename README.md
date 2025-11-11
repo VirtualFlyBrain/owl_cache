@@ -30,7 +30,7 @@ services:
       - "80:80"
     environment:
       - UPSTREAM_SERVER=owl:8080  # For production with owl service
-      - CACHE_MAX_SIZE=1t         # 1TB cache size for high-traffic deployments
+      - CACHE_MAX_SIZE=1000g      # 1TB cache size for high-traffic deployments
 ```
 
 ### Health Check
@@ -45,7 +45,7 @@ curl http://localhost/health
 ### Environment Variables
 
 - `UPSTREAM_SERVER`: Backend server URL (default: `owl.virtualflybrain.org:80`)
-- `CACHE_MAX_SIZE`: Maximum cache size on disk (default: `20g`, accepts NGINX size units like `1t` for 1TB)
+- `CACHE_MAX_SIZE`: Maximum cache size on disk (default: `20g`, accepts NGINX size units: `k`/`K` kilobytes, `m`/`M` megabytes, `g`/`G` gigabytes)
 
 ### Cache Headers
 
@@ -69,7 +69,7 @@ The proxy adds helpful headers to responses:
 - **Base image**: nginx:1.26-alpine
 - **Cache storage**: `/var/cache/nginx/owlery` with 1:2 directory levels
 - **Cache zone**: 100MB in-memory metadata zone
-- **Max cache size**: 20GB on disk (configurable via `CACHE_MAX_SIZE` environment variable)
+- **Max cache size**: 20GB on disk (configurable via `CACHE_MAX_SIZE` environment variable, supports k/K, m/M, g/G units)
 
 ### Caching Behavior
 
