@@ -25,16 +25,24 @@ jobs:
         echo "tag=$TAG" >> $GITHUB_OUTPUT
 
     - name: Test NGINX configuration
+      env:
+        UPSTREAM_SERVER: owl.virtualflybrain.org:80
+        CACHE_MAX_SIZE: 20g
+        DNS_RESOLVER: 8.8.8.8
       run: |
-        UPSTREAM_SERVER=owl.virtualflybrain.org:80 CACHE_MAX_SIZE=20g DNS_RESOLVER="8.8.8.8 1.1.1.1" envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${DNS_RESOLVER}' < nginx.conf.template > test-nginx.conf
+        envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${DNS_RESOLVER}' < nginx.conf.template > test-nginx.conf
         docker run --rm -v $(pwd)/test-nginx.conf:/tmp/nginx.conf nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
 
     - name: Build test Docker image
       run: docker build --no-cache . --file Dockerfile --tag test-image
 
     - name: Test container startup
+      env:
+        UPSTREAM_SERVER: owl.virtualflybrain.org:80
+        CACHE_MAX_SIZE: 20g
+        DNS_RESOLVER: 8.8.8.8
       run: |
-        docker run -d --name test-container -e UPSTREAM_SERVER=owl.virtualflybrain.org:80 -e CACHE_MAX_SIZE=20g -e DNS_RESOLVER="8.8.8.8 1.1.1.1" test-image
+        docker run -d --name test-container test-image
         sleep 5
         if docker ps | grep -q test-container; then
           echo "Container is running successfully"
