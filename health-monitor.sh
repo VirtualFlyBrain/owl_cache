@@ -6,6 +6,11 @@
 UPSTREAM_HOST=$(echo $UPSTREAM_SERVER | cut -d: -f1)
 UPSTREAM_PORT=$(echo $UPSTREAM_SERVER | cut -d: -f2)
 
+# Default to port 80 if no port specified
+if [ "$UPSTREAM_HOST" = "$UPSTREAM_PORT" ]; then
+    UPSTREAM_PORT=80
+fi
+
 echo "Monitoring upstream server: $UPSTREAM_HOST:$UPSTREAM_PORT"
 
 while true; do
