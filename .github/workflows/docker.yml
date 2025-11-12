@@ -34,7 +34,7 @@ jobs:
 
     - name: Test container startup
       run: |
-        docker run -d --name test-container test-image
+        docker run -d --name test-container -e UPSTREAM_SERVER=owl.virtualflybrain.org:80 -e CACHE_MAX_SIZE=20g -e DNS_RESOLVER="8.8.8.8 1.1.1.1" test-image
         sleep 5
         if docker ps | grep -q test-container; then
           echo "Container is running successfully"
