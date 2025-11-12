@@ -40,23 +40,18 @@ http {
 
         location /health {
             access_log off;
-            proxy_pass http://owlery/;
-            proxy_connect_timeout 3s;
-            proxy_read_timeout 3s;
-            proxy_intercept_errors on;
-            error_page 500 502 503 504 =503 "UPSTREAM_UNAVAILABLE\n";
+            return 200 "OK\n";
             add_header Content-Type text/plain;
-            add_header X-Upstream-Status $upstream_status;
         }
 
         location / {
             proxy_pass http://owlery$request_uri;
             proxy_http_version 1.1;
             proxy_set_header Connection "";
-            proxy_connect_timeout 90s;
-            proxy_read_timeout 90s;
-            proxy_send_timeout 90s;
-            proxy_set_header Host $http_host;
+            proxy_connect_timeout 900s;
+            proxy_read_timeout 900s;
+            proxy_send_timeout 900s;
+            # proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -75,23 +70,18 @@ http {
 
         location /health {
             access_log off;
-            proxy_pass http://owlery/;
-            proxy_connect_timeout 3s;
-            proxy_read_timeout 3s;
-            proxy_intercept_errors on;
-            error_page 500 502 503 504 =503 "UPSTREAM_UNAVAILABLE\n";
+            return 200 "OK\n";
             add_header Content-Type text/plain;
-            add_header X-Upstream-Status $upstream_status;
         }
 
         location / {
             proxy_pass http://owlery$request_uri;
             proxy_http_version 1.1;
             proxy_set_header Connection "";
-            proxy_connect_timeout 90s;
-            proxy_read_timeout 90s;
-            proxy_send_timeout 90s;
-            proxy_set_header Host $http_host;
+            proxy_connect_timeout 900s;
+            proxy_read_timeout 900s;
+            proxy_send_timeout 900s;
+            # proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;

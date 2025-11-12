@@ -11,7 +11,7 @@ ARG NGINX_CONF=nginx.conf.template
 COPY $NGINX_CONF /etc/nginx/nginx.conf.template
 COPY health-monitor.sh /usr/local/bin/health-monitor.sh
 
-RUN mkdir -p /var/cache/nginx && chown -R nginx:nginx /var/cache/nginx && \
+RUN mkdir -p /var/cache/nginx/owlery && chown -R nginx:nginx /var/cache/nginx && \
     chmod +x /usr/local/bin/health-monitor.sh
 
 EXPOSE 80 8080
