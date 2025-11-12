@@ -9,14 +9,14 @@ A high-performance caching proxy server that sits in front of OWL reasoning serv
 ### Basic Usage
 
 ```bash
-# Start the proxy
-docker run -d --name owl-cache -p 80:80 virtualflybrain/owl_cache:latest
+# Start the proxy (both ports 80 and 8080 are available)
+docker run -d --name owl-cache -p 80:80 -p 8080:8080 virtualflybrain/owl_cache:latest
 
-# Make a query (will be slow first time)
+# Make a query on port 80 (will be slow first time)
 curl "http://localhost/kbs/vfb/instances?object=<http://purl.obolibrary.org/obo/FBbt_00005106>"
 
-# Same query again (will be fast from cache)
-curl "http://localhost/kbs/vfb/instances?object=<http://purl.obolibrary.org/obo/FBbt_00005106>"
+# Same query on port 8080 (will be fast from cache)
+curl "http://localhost:8080/kbs/vfb/instances?object=<http://purl.obolibrary.org/obo/FBbt_00005106>"
 ```
 
 ### With Docker Compose
@@ -28,6 +28,7 @@ services:
     image: virtualflybrain/owl_cache:latest
     ports:
       - "80:80"
+      - "8080:8080"
     environment:
       - UPSTREAM_SERVER=owl:8080  # For production with owl service
       - CACHE_MAX_SIZE=1t         # 1TB cache size for high-traffic deployments
@@ -90,7 +91,7 @@ The proxy adds helpful headers to responses:
 
 ### Networking
 
-- **Listen port**: 80
+- **Listen ports**: 80 and 8080 (both ports handle requests identically)
 - **DNS resolver**: Configurable via `DNS_RESOLVER` (default: Google Public DNS with 30s TTL for fast upstream IP updates). Check `cat /etc/resolv.conf` in your container for the correct value.
 - **Host-agnostic**: Ignores Host header for routing
 - **Connection pooling**: 16 keep-alive connections to backend
