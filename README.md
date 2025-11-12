@@ -92,7 +92,7 @@ The proxy adds helpful headers to responses:
 ### Networking
 
 - **Listen ports**: 80 and 8080 (both ports handle requests identically)
-- **DNS resolver**: Configurable via `DNS_RESOLVER` (default: Google Public DNS with 30s TTL for fast upstream IP updates). Check `cat /etc/resolv.conf` in your container for the correct value.
+- **DNS resolver**: Configurable via `DNS_RESOLVER` (default: Google Public DNS `8.8.8.8` with 30s TTL for fast upstream IP updates). Check `cat /etc/resolv.conf` in your container for the correct value.
 - **Host-agnostic**: Ignores Host header for routing
 - **Connection pooling**: 16 keep-alive connections to backend
 - **Timeouts**: 90s connect/read/send, 3s for health checks

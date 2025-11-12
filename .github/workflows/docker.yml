@@ -42,7 +42,11 @@ jobs:
         CACHE_MAX_SIZE: 20g
         DNS_RESOLVER: 8.8.8.8
       run: |
-        docker run -d --name test-container test-image
+        docker run -d --name test-container \
+          -e UPSTREAM_SERVER \
+          -e CACHE_MAX_SIZE \
+          -e DNS_RESOLVER \
+          test-image
         sleep 5
         if docker ps | grep -q test-container; then
           echo "Container is running successfully"
