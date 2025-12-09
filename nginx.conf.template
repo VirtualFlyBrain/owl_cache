@@ -5,13 +5,8 @@ events {
 }
 
 http {
-    resolver ${DNS_RESOLVER} valid=30s;
+    resolver ${DNS_RESOLVER} valid=30s ipv6=off;
     resolver_timeout 5s;
-
-    upstream owlery {
-        server ${UPSTREAM_SERVER};
-        keepalive 16;
-    }
 
     log_format cache '$remote_addr - $remote_user [$time_local] "$request" '
                         '$status $body_bytes_sent "$http_referer" '
@@ -48,6 +43,8 @@ http {
         }
 
         location / {
+            set $backend "${UPSTREAM_SERVER}";
+            proxy_pass http://$backend$request_uri;
             proxy_ignore_client_abort on;
             proxy_pass http://owlery$request_uri;
             proxy_http_version 1.1;
@@ -58,9 +55,6 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-            proxy_next_upstream_timeout 30s;
-            proxy_next_upstream_tries 2;
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
@@ -82,6 +76,8 @@ http {
         }
 
         location / {
+            set $backend "${UPSTREAM_SERVER}";
+            proxy_pass http://$backend$request_uri;
             proxy_ignore_client_abort on;
             proxy_pass http://owlery$request_uri;
             proxy_http_version 1.1;
@@ -92,9 +88,6 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-            proxy_next_upstream_timeout 30s;
-            proxy_next_upstream_tries 2;
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
