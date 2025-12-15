@@ -30,6 +30,7 @@ http {
 
     proxy_cache_valid 200 7776000s;
     proxy_cache_valid 404 600s;
+    proxy_cache_valid 400 7776000s;
 
     proxy_cache_use_stale updating;
     proxy_cache_background_update on;
