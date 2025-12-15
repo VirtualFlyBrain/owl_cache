@@ -5,13 +5,8 @@ events {
 }
 
 http {
-    resolver ${DNS_RESOLVER} valid=30s;
+    resolver ${DNS_RESOLVER} valid=30s ipv6=off;
     resolver_timeout 5s;
-
-    upstream owlery {
-        server ${UPSTREAM_SERVER};
-        keepalive 16;
-    }
 
     log_format cache '$remote_addr - $remote_user [$time_local] "$request" '
                         '$status $body_bytes_sent "$http_referer" '
@@ -21,18 +16,18 @@ http {
     access_log /dev/stdout cache;
     error_log /dev/stderr warn;
 
-    proxy_cache_path /var/cache/nginx/owlery levels=1:2 keys_zone=owlery_cache:100m max_size=${CACHE_MAX_SIZE} inactive=7776000s use_temp_path=off;
+    proxy_cache_path /var/cache/nginx/owlery levels=1:2 keys_zone=owlery_cache:100m max_size=${CACHE_MAX_SIZE} inactive=5d use_temp_path=off;
 
     proxy_cache_key "$request_method$request_uri";
     proxy_cache_min_uses 1;
     proxy_cache_revalidate on;
     proxy_cache_methods GET HEAD;
 
-    proxy_cache_valid 200 7776000s;
+    proxy_cache_valid 200 5d;
+    proxy_cache_valid 400 5d;
     proxy_cache_valid 404 600s;
-    proxy_cache_valid 400 7776000s;
 
-    proxy_cache_use_stale updating;
+    proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504 http_404;
     proxy_cache_background_update on;
     proxy_cache_lock on;
 
@@ -50,19 +45,17 @@ http {
         }
 
         location / {
-            proxy_pass http://owlery$request_uri;
+            set $backend "${UPSTREAM_SERVER}";
+            proxy_pass http://$backend$request_uri;
+            proxy_ignore_client_abort on;
             proxy_http_version 1.1;
             proxy_set_header Connection "";
-            proxy_connect_timeout 900s;
-            proxy_read_timeout 900s;
-            proxy_send_timeout 900s;
-            # proxy_set_header Host $host;
+            proxy_connect_timeout 1h;
+            proxy_read_timeout 1h;
+            proxy_send_timeout 1h;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-            proxy_next_upstream_timeout 30s;
-            proxy_next_upstream_tries 2;
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
@@ -84,19 +77,17 @@ http {
         }
 
         location / {
-            proxy_pass http://owlery$request_uri;
+            set $backend "${UPSTREAM_SERVER}";
+            proxy_pass http://$backend$request_uri;
+            proxy_ignore_client_abort on;
             proxy_http_version 1.1;
             proxy_set_header Connection "";
-            proxy_connect_timeout 900s;
-            proxy_read_timeout 900s;
-            proxy_send_timeout 900s;
-            # proxy_set_header Host $host;
+            proxy_connect_timeout 1h;
+            proxy_read_timeout 1h;
+            proxy_send_timeout 1h;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-            proxy_next_upstream_timeout 30s;
-            proxy_next_upstream_tries 2;
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
