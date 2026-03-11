@@ -47,12 +47,15 @@ http {
         location / {
             set $backend "${UPSTREAM_SERVER}";
             proxy_pass http://$backend$request_uri;
+            # Keep fetching from upstream even if the client/proxy in front disconnects.
             proxy_ignore_client_abort on;
+            # Ensure full response buffering so completed upstream responses can be cached.
+            proxy_buffering on;
             proxy_http_version 1.1;
             proxy_set_header Connection "";
-            proxy_connect_timeout 1h;
-            proxy_read_timeout 1h;
-            proxy_send_timeout 1h;
+            proxy_connect_timeout 6h;
+            proxy_read_timeout 6h;
+            proxy_send_timeout 6h;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -79,12 +82,15 @@ http {
         location / {
             set $backend "${UPSTREAM_SERVER}";
             proxy_pass http://$backend$request_uri;
+            # Keep fetching from upstream even if the client/proxy in front disconnects.
             proxy_ignore_client_abort on;
+            # Ensure full response buffering so completed upstream responses can be cached.
+            proxy_buffering on;
             proxy_http_version 1.1;
             proxy_set_header Connection "";
-            proxy_connect_timeout 1h;
-            proxy_read_timeout 1h;
-            proxy_send_timeout 1h;
+            proxy_connect_timeout 6h;
+            proxy_read_timeout 6h;
+            proxy_send_timeout 6h;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
