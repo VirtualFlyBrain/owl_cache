@@ -28,9 +28,10 @@ jobs:
       env:
         UPSTREAM_SERVER: owl.virtualflybrain.org:80
         CACHE_MAX_SIZE: 20g
+        CACHE_STALE_TIME: 6M
         DNS_RESOLVER: 8.8.8.8
       run: |
-        envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${DNS_RESOLVER}' < nginx.conf.template > test-nginx.conf
+        envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER}' < nginx.conf.template > test-nginx.conf
         docker run --rm -v $(pwd)/test-nginx.conf:/tmp/nginx.conf nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
 
     - name: Build test Docker image
@@ -40,11 +41,13 @@ jobs:
       env:
         UPSTREAM_SERVER: owl.virtualflybrain.org:80
         CACHE_MAX_SIZE: 20g
+        CACHE_STALE_TIME: 6M
         DNS_RESOLVER: 8.8.8.8
       run: |
         docker run -d --name test-container \
           -e UPSTREAM_SERVER \
           -e CACHE_MAX_SIZE \
+          -e CACHE_STALE_TIME \
           -e DNS_RESOLVER \
           test-image
         sleep 5
