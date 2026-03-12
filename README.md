@@ -2,7 +2,7 @@
 
 [![Docker Image](https://img.shields.io/badge/docker-virtualflybrain%2Fowl_cache-blue)](https://hub.docker.com/r/virtualflybrain/owl_cache)
 
-A high-performance caching proxy server that sits in front of OWL reasoning services to dramatically speed up query responses. Built on NGINX Alpine with 90-day cache TTL and stale-while-revalidate pattern.
+A high-performance caching proxy server that sits in front of OWL reasoning services to dramatically speed up query responses. Built on NGINX Alpine with a 6-month cache TTL, stale-while-revalidate pattern, and 5-year disk retention so a cached response is always available.
 
 ## Usage Examples
 
@@ -53,7 +53,8 @@ The health endpoint now proxies to the upstream server to verify connectivity. I
 
 - `UPSTREAM_SERVER`: Backend server URL (default: `owl.virtualflybrain.org:80`)
 - `CACHE_MAX_SIZE`: Maximum cache size on disk (default: `20g`, accepts NGINX size units like `1t` for 1TB)
-- `DNS_RESOLVER`: DNS resolver servers (default: `8.8.8.8 1.1.1.1`, space-separated list). Check `cat /etc/resolv.conf` in your container to find the correct value for your environment.
+- `CACHE_STALE_TIME`: How long a cached response is considered fresh (default: `6M`). After this time the entry is served stale while being refreshed in the background. Accepts NGINX time units: `s`, `m`, `h`, `d`, `w`, `M` (30 days), `y` (365 days).
+- `DNS_RESOLVER`: DNS resolver servers (default: `8.8.8.8`, space-separated list). Check `cat /etc/resolv.conf` in your container to find the correct value for your environment.
 
 ### Cache Headers
 
@@ -64,7 +65,8 @@ The proxy adds helpful headers to responses:
 
 ## Performance
 
-- **Cache TTL**: 90 days for successful responses
+- **Cache TTL**: 6 months for successful responses (configurable via `CACHE_STALE_TIME`)
+- **Disk retention**: 5 years (`inactive=5y`) — entries are never evicted while disk space allows
 - **First request**: ~200ms (backend query)
 - **Cached requests**: <10ms (from cache)
 - **Cache size**: Up to 20GB on disk (configurable via `CACHE_MAX_SIZE`)
@@ -82,8 +84,9 @@ The proxy adds helpful headers to responses:
 
 ### Caching Behavior
 
-- **Cache TTL**: 90 days for HTTP 200, 10 minutes for 404, errors not cached
-- **Stale-while-revalidate**: `proxy_cache_use_stale updating` + `proxy_cache_background_update on`
+- **Cache TTL**: 6 months for HTTP 200/400, 10 minutes for 404 (TTL configurable via `CACHE_STALE_TIME`)
+- **Always serve stale**: `proxy_cache_use_stale expired updating` — expired entries are served immediately while refreshed in the background (prevents MISSes after TTL)
+- **Disk retention**: 5 years — cache files are kept on disk even after TTL expires
 - **Retry on errors**: Automatically retries failed requests (502, 503, 504, timeouts) up to 2 times
 - **Cache lock**: Prevents stampede with `proxy_cache_lock on`
 - **Cache key**: `$request_method$request_uri`
