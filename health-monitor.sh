@@ -3,7 +3,7 @@
 # Poll NGINX and the access log to keep /status current while also logging
 # upstream reachability changes.
 
-ACCESS_LOG=${ACCESS_LOG:-/var/log/nginx/access.log}
+ACCESS_LOG=${ACCESS_LOG:-/var/log/nginx/cache-access.log}
 STATUS_FILE=${STATUS_FILE:-/var/run/nginx/status.json}
 NGINX_STATUS_URL=${NGINX_STATUS_URL:-http://127.0.0.1:8080/__nginx_status}
 STATUS_POLL_INTERVAL=${STATUS_POLL_INTERVAL:-5}

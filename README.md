@@ -78,7 +78,7 @@ Example response:
 }
 ```
 
-`/status` is refreshed by a background monitor that reads the access log for cache totals and samples NGINX `stub_status` for connection counters.
+`/status` is refreshed by a background monitor that reads `/var/log/nginx/cache-access.log` for cache totals and samples NGINX `stub_status` for connection counters.
 
 **Health Monitoring**: A background process logs warnings when the upstream server becomes unreachable, but the container continues running to serve cached content.
 
