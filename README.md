@@ -39,13 +39,48 @@ services:
 
 ```bash
 curl http://localhost/health
-# Returns: upstream response or "UPSTREAM_UNAVAILABLE" (503) if upstream is down
-# Includes X-Upstream-Status header showing actual upstream response code
+# Returns: OK
 ```
 
-The health endpoint now proxies to the upstream server to verify connectivity. If the upstream is unavailable, it returns 503 with "UPSTREAM_UNAVAILABLE".
+`/health` is a lightweight liveness check for NGINX itself. Use `/status` for upstream reachability, cache totals, and connection counters.
 
-**Health Monitoring**: A background process logs warnings every 5 minutes if the upstream server becomes unreachable, but the container continues running to serve cached content.
+### Status Endpoint
+
+```bash
+curl http://localhost/status
+```
+
+Example response:
+
+```json
+{
+  "updated_at": "2026-03-24T12:00:00Z",
+  "health": {
+    "nginx": true,
+    "upstream": true
+  },
+  "upstream": {
+    "host": "owl.virtualflybrain.org",
+    "port": 80
+  },
+  "cache": {
+    "source": "access_log",
+    "total": 120,
+    "hit": 113,
+    "miss": 7
+  },
+  "connections": {
+    "active": 3,
+    "reading": 0,
+    "writing": 1,
+    "waiting": 2
+  }
+}
+```
+
+`/status` is refreshed by a background monitor that reads the access log for cache totals and samples NGINX `stub_status` for connection counters.
+
+**Health Monitoring**: A background process logs warnings when the upstream server becomes unreachable, but the container continues running to serve cached content.
 
 ## Configuration
 
@@ -55,12 +90,14 @@ The health endpoint now proxies to the upstream server to verify connectivity. I
 - `CACHE_MAX_SIZE`: Maximum cache size on disk (default: `20g`, accepts NGINX size units like `1t` for 1TB)
 - `CACHE_STALE_TIME`: How long a cached response is considered fresh (default: `6M`). After this time the entry is served stale while being refreshed in the background. Accepts NGINX time units: `s`, `m`, `h`, `d`, `w`, `M` (30 days), `y` (365 days).
 - `DNS_RESOLVER`: DNS resolver servers (default: `8.8.8.8`, space-separated list). Check `cat /etc/resolv.conf` in your container to find the correct value for your environment.
+- `STATUS_POLL_INTERVAL`: Seconds between `/status` refreshes (default: `5`)
+- `HEALTH_LOG_INTERVAL`: Seconds between periodic upstream health log lines when state is unchanged (default: `300`)
 
 ### Cache Headers
 
 The proxy adds helpful headers to responses:
 
-- `X-Cache-Status`: `HIT`, `MISS`, `EXPIRED`, or `STALE`
+- `X-Cache-Status`: `HIT`, `MISS`, `EXPIRED`, `STALE`, `UPDATING`, or `REVALIDATED`
 - `X-Cache-Key`: The cache key used for the request
 
 ## Performance
@@ -80,7 +117,8 @@ The proxy adds helpful headers to responses:
 - **Cache storage**: `/var/cache/nginx/owlery` with 1:2 directory levels
 - **Cache zone**: 100MB in-memory metadata zone
 - **Max cache size**: 20GB on disk (configurable via `CACHE_MAX_SIZE` environment variable)
-- **Health monitoring**: Background process checks upstream connectivity every 5 minutes and logs warnings
+- **Status monitoring**: Background process updates `/var/run/nginx/status.json` from the access log and NGINX `stub_status`
+- **Health monitoring**: Background process checks upstream connectivity and logs warnings without taking the cache offline
 
 ### Caching Behavior
 
@@ -95,6 +133,7 @@ The proxy adds helpful headers to responses:
 ### Networking
 
 - **Listen ports**: 80 and 8080 (both ports handle requests identically)
+- **Status endpoints**: `/health` for liveness, `/status` for JSON metrics, and internal-only `/__nginx_status` for raw NGINX counters
 - **DNS resolver**: Configurable via `DNS_RESOLVER` (default: Google Public DNS `8.8.8.8` with 30s TTL for fast upstream IP updates). Check `cat /etc/resolv.conf` in your container for the correct value.
 - **Host-agnostic**: Ignores Host header for routing
 - **Connection pooling**: 16 keep-alive connections to backend
@@ -147,3 +186,4 @@ Set these in your GitHub repository secrets:
 - **Subsequent Requests**: Cache HIT → Return cached result (<10ms) with X-Cache-Status: HIT
 - **Expired Cache**: Return stale content immediately with X-Cache-Status: UPDATING + background refresh
 - **Backend Errors**: Forward errors to client without caching, allowing retries to succeed
+- **Status Reporting**: `/status` shows current hit/miss/total counts from the access log plus sampled connection counters

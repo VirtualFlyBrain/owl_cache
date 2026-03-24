@@ -17,6 +17,7 @@ http {
                         '$upstream_cache_status $request_time $upstream_response_time';
 
     access_log /dev/stdout cache;
+    access_log /var/log/nginx/access.log cache;
     error_log /dev/stderr warn;
 
     proxy_cache_path /var/cache/nginx/owlery levels=1:2 keys_zone=owlery_cache:100m max_size=${CACHE_MAX_SIZE} inactive=5y use_temp_path=off;
@@ -38,6 +39,21 @@ http {
 
     server {
         listen 80;
+
+        location = /status {
+            access_log off;
+            default_type application/json;
+            add_header Cache-Control "no-store" always;
+            alias /var/run/nginx/status.json;
+        }
+
+        location = /__nginx_status {
+            access_log off;
+            stub_status;
+            allow 127.0.0.1;
+            allow ::1;
+            deny all;
+        }
 
         location /health {
             access_log off;
@@ -78,6 +94,21 @@ http {
 
     server {
         listen 8080;
+
+        location = /status {
+            access_log off;
+            default_type application/json;
+            add_header Cache-Control "no-store" always;
+            alias /var/run/nginx/status.json;
+        }
+
+        location = /__nginx_status {
+            access_log off;
+            stub_status;
+            allow 127.0.0.1;
+            allow ::1;
+            deny all;
+        }
 
         location /health {
             access_log off;
