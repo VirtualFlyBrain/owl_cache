@@ -100,7 +100,7 @@ Example response:
 
 ### Security Filtering and Blocking
 
-- **Probe filtering**: Requests matching common probing signatures (for example `*.php`, `wp-login.php`, `.env`, `phpmyadmin`, path traversal payloads) are immediately refused with HTTP `403` and are **not** forwarded upstream.
+- **Probe filtering**: Requests matching common probing signatures (for example `*.php`, `wp-login.php`, `xmlrpc.php`, `wlwmanifest.xml`, `.env`, `phpmyadmin`, path traversal payloads) are immediately refused with HTTP `403` and are **not** forwarded upstream.
 - **Probe log output**: Refused probe requests are logged to `/logs/hacks/probes.log`, including both raw `X-Forwarded-For` and the extracted left-most client IP.
 - **Manual IP blocklist**: Add one IPv4/IPv6 address per line in `/logs/blocked.txt` (comments allowed with `#`).
 - **Manual IP whitelist**: Add one IPv4/IPv6 address per line in `/logs/whitelist.txt` (comments allowed with `#`).

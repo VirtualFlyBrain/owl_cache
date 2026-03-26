@@ -21,7 +21,7 @@ http {
     map $request_uri $is_probe_request {
         default 0;
         ~*(?:^|/).*\.(?:php\d*|phtml|phar|asp|aspx|jsp|cgi|pl)(?:$|[/?]) 1;
-        ~*(?:^|/)(?:wp-admin|wp-login\.php|xmlrpc\.php|phpmyadmin|pma|adminer|cgi-bin|vendor/phpunit)(?:$|[/?]) 1;
+        ~*(?:^|/)(?:wp-admin|wp-login\.php|xmlrpc\.php|wlwmanifest\.xml|phpmyadmin|pma|adminer|cgi-bin|vendor/phpunit)(?:$|[/?]) 1;
         ~*(?:^|/)\.(?:env|git|svn|hg|DS_Store)(?:$|[/?]) 1;
         ~*(?:\.\./|etc/passwd|proc/self/environ|php://|auto_prepend_file|allow_url_include|%00) 1;
     }
