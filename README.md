@@ -97,11 +97,13 @@ Example response:
 - `DNS_RESOLVER`: DNS resolver servers (default: `8.8.8.8`, space-separated list). Check `cat /etc/resolv.conf` in your container to find the correct value for your environment.
 - `STATUS_POLL_INTERVAL`: Seconds between `/status` refreshes (default: `5`)
 - `HEALTH_LOG_INTERVAL`: Seconds between periodic upstream health log lines when state is unchanged (default: `300`)
+- `AUTO_BLOCK_SCANNERS`: Automatically append probe-source IPs from `/logs/hacks/probes.log` to `/logs/blocked.txt` and live-reload NGINX maps (default: `true`)
 
 ### Security Filtering and Blocking
 
-- **Probe filtering**: Requests matching common probing signatures (for example `*.php`, `wp-login.php`, `xmlrpc.php`, `wlwmanifest.xml`, `.env`, `phpmyadmin`, path traversal payloads) are immediately refused with HTTP `403` and are **not** forwarded upstream.
+- **Probe filtering**: Requests matching common probing signatures (for example `*.php`, WordPress probe paths like `wp-login.php`, `xmlrpc.php`, `wlwmanifest.xml`, `wp-includes/*`, `.env`, `phpmyadmin`, path traversal payloads) are immediately refused with HTTP `403` and are **not** forwarded upstream.
 - **Probe log output**: Refused probe requests are logged to `/logs/hacks/probes.log`, including both raw `X-Forwarded-For` and the extracted left-most client IP.
+- **Automatic scanner blocking**: When `AUTO_BLOCK_SCANNERS=true`, newly detected `client_ip` values in `/logs/hacks/probes.log` are appended to `/logs/blocked.txt` (unless already present or whitelisted), and NGINX is reloaded so the block takes effect without container restart.
 - **Manual IP blocklist**: Add one IPv4/IPv6 address per line in `/logs/blocked.txt` (comments allowed with `#`).
 - **Manual IP whitelist**: Add one IPv4/IPv6 address per line in `/logs/whitelist.txt` (comments allowed with `#`).
 
@@ -125,7 +127,7 @@ Blocked IP requests return HTTP `403` and are logged to `/logs/hacks/blocked.log
 
 Whitelist entries take precedence over both the blocklist and probe filter.
 
-Blocklist/whitelist entries are loaded when the container starts. If you update `/logs/blocked.txt` or `/logs/whitelist.txt`, restart the container to apply changes.
+Blocklist/whitelist entries are watched continuously by the runtime monitor. Updates to `/logs/blocked.txt` or `/logs/whitelist.txt` are converted into map files and applied via `nginx -s reload` within a few seconds.
 
 ### Cache Headers
 

@@ -8,6 +8,12 @@ STATUS_FILE=${STATUS_FILE:-/var/run/nginx/status.json}
 NGINX_STATUS_URL=${NGINX_STATUS_URL:-http://127.0.0.1:8080/__nginx_status}
 STATUS_POLL_INTERVAL=${STATUS_POLL_INTERVAL:-5}
 HEALTH_LOG_INTERVAL=${HEALTH_LOG_INTERVAL:-300}
+PROBE_LOG=${PROBE_LOG:-/logs/hacks/probes.log}
+BLOCKLIST_SOURCE=${BLOCKLIST_SOURCE:-/logs/blocked.txt}
+BLOCKLIST_MAP=${BLOCKLIST_MAP:-/etc/nginx/blocked-ips.map}
+WHITELIST_SOURCE=${WHITELIST_SOURCE:-/logs/whitelist.txt}
+WHITELIST_MAP=${WHITELIST_MAP:-/etc/nginx/whitelisted-ips.map}
+AUTO_BLOCK_SCANNERS=${AUTO_BLOCK_SCANNERS:-true}
 
 UPSTREAM_HOST=$(printf '%s' "$UPSTREAM_SERVER" | cut -d: -f1)
 UPSTREAM_PORT=$(printf '%s' "$UPSTREAM_SERVER" | cut -d: -f2)
@@ -28,6 +34,9 @@ total_requests=0
 hit_requests=0
 miss_requests=0
 access_log_size=0
+probe_log_size=0
+last_blocklist_signature=0:0
+last_whitelist_signature=0:0
 
 active_connections=
 reading_connections=
@@ -61,6 +70,162 @@ get_file_size() {
         printf '%s' "$size"
     else
         wc -c < "$1" 2>/dev/null | tr -d ' '
+    fi
+}
+
+get_file_mtime() {
+    if [ ! -f "$1" ]; then
+        printf '0'
+        return
+    fi
+
+    if mtime=$(stat -c %Y "$1" 2>/dev/null); then
+        printf '%s' "$mtime"
+    else
+        printf '0'
+    fi
+}
+
+get_file_signature() {
+    file_path="$1"
+    printf '%s:%s' "$(get_file_mtime "$file_path")" "$(get_file_size "$file_path")"
+}
+
+is_truthy() {
+    value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$value" in
+        1|true|yes|on)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+is_valid_ip() {
+    printf '%s' "$1" | grep -Eq '^[0-9A-Fa-f:.]+$'
+}
+
+is_ip_listed() {
+    source_file="$1"
+    ip="$2"
+
+    if [ ! -f "$source_file" ]; then
+        return 1
+    fi
+
+    grep -Fqx "$ip" "$source_file" 2>/dev/null
+}
+
+prepare_security_paths() {
+    mkdir -p \
+        "$(dirname "$PROBE_LOG")" \
+        "$(dirname "$BLOCKLIST_SOURCE")" \
+        "$(dirname "$BLOCKLIST_MAP")" \
+        "$(dirname "$WHITELIST_SOURCE")" \
+        "$(dirname "$WHITELIST_MAP")"
+
+    touch "$PROBE_LOG"
+    touch "$BLOCKLIST_SOURCE"
+    touch "$BLOCKLIST_MAP"
+    touch "$WHITELIST_SOURCE"
+    touch "$WHITELIST_MAP"
+}
+
+generate_ip_map() {
+    source_file="$1"
+    target_map="$2"
+    label="$3"
+    tmp_map="$(mktemp /tmp/${label}-ips.XXXXXX)"
+    : > "$tmp_map"
+
+    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+        line="$(printf '%s' "$raw_line" | tr -d '\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -z "$line" ] && continue
+
+        if is_valid_ip "$line"; then
+            printf '%s 1;\n' "$line" >> "$tmp_map"
+        else
+            printf 'Ignoring invalid %s IP entry in %s: %s\n' "$label" "$source_file" "$raw_line" >&2
+        fi
+    done < "$source_file"
+
+    mv "$tmp_map" "$target_map"
+}
+
+reload_nginx() {
+    if nginx -s reload >/dev/null 2>&1; then
+        echo "$(date): Applied updated block/whitelist IP maps and reloaded nginx"
+    else
+        echo "$(date): WARNING - Failed to reload nginx after IP map update" >&2
+    fi
+}
+
+sync_ip_maps_if_needed() {
+    blocklist_signature=$(get_file_signature "$BLOCKLIST_SOURCE")
+    whitelist_signature=$(get_file_signature "$WHITELIST_SOURCE")
+
+    if [ "$blocklist_signature" = "$last_blocklist_signature" ] && [ "$whitelist_signature" = "$last_whitelist_signature" ]; then
+        return
+    fi
+
+    generate_ip_map "$BLOCKLIST_SOURCE" "$BLOCKLIST_MAP" "blocked"
+    generate_ip_map "$WHITELIST_SOURCE" "$WHITELIST_MAP" "whitelisted"
+    last_blocklist_signature="$blocklist_signature"
+    last_whitelist_signature="$whitelist_signature"
+    reload_nginx
+}
+
+update_auto_blocklist_from_probe_log() {
+    if ! is_truthy "$AUTO_BLOCK_SCANNERS"; then
+        return
+    fi
+
+    current_size=$(get_file_size "$PROBE_LOG")
+
+    if [ "$current_size" -lt "$probe_log_size" ]; then
+        # Log rotation/truncation: restart tailing from the beginning.
+        probe_log_size=0
+    fi
+
+    if [ "$current_size" -eq "$probe_log_size" ]; then
+        return
+    fi
+
+    start_byte=$((probe_log_size + 1))
+    tmp_chunk="$(mktemp /tmp/probe-log.XXXXXX)"
+
+    if ! tail -c +"$start_byte" "$PROBE_LOG" > "$tmp_chunk" 2>/dev/null; then
+        rm -f "$tmp_chunk"
+        probe_log_size="$current_size"
+        return
+    fi
+
+    probe_log_size="$current_size"
+    added_ip=0
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        ip="$(printf '%s\n' "$line" | sed -n 's/.*client_ip="\([^"]*\)".*/\1/p')"
+        [ -z "$ip" ] && continue
+        is_valid_ip "$ip" || continue
+
+        # Whitelisted IPs remain exempt even if they trigger probe patterns.
+        if is_ip_listed "$WHITELIST_SOURCE" "$ip"; then
+            continue
+        fi
+
+        if ! is_ip_listed "$BLOCKLIST_SOURCE" "$ip"; then
+            printf '%s\n' "$ip" >> "$BLOCKLIST_SOURCE"
+            added_ip=1
+            echo "$(date): Auto-blocked scanner IP: $ip"
+        fi
+    done < "$tmp_chunk"
+
+    rm -f "$tmp_chunk"
+
+    if [ "$added_ip" -eq 1 ]; then
+        sync_ip_maps_if_needed
     fi
 }
 
@@ -216,15 +381,27 @@ EOF
 }
 
 mkdir -p "$STATUS_DIR" "$ACCESS_LOG_DIR"
+prepare_security_paths
 umask 022
+
+probe_log_size=$(get_file_size "$PROBE_LOG")
+last_blocklist_signature=$(get_file_signature "$BLOCKLIST_SOURCE")
+last_whitelist_signature=$(get_file_signature "$WHITELIST_SOURCE")
 
 recount_access_log
 write_status_file
 
 echo "Monitoring upstream server: $UPSTREAM_HOST:$UPSTREAM_PORT"
+if is_truthy "$AUTO_BLOCK_SCANNERS"; then
+    echo "Auto-blocking scanner IPs from probe log is enabled"
+else
+    echo "Auto-blocking scanner IPs from probe log is disabled"
+fi
 
 while true; do
     update_access_log_counts
+    update_auto_blocklist_from_probe_log
+    sync_ip_maps_if_needed
     update_upstream_health
     update_connection_stats
     write_status_file
