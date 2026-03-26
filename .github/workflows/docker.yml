@@ -32,7 +32,16 @@ jobs:
         DNS_RESOLVER: 8.8.8.8
       run: |
         envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER}' < nginx.conf.template > test-nginx.conf
-        docker run --rm -v $(pwd)/test-nginx.conf:/tmp/nginx.conf nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
+        mkdir -p test-logs/hacks
+        touch test-logs/blocked.txt test-logs/whitelist.txt test-logs/blocked-ips.map test-logs/whitelisted-ips.map
+        docker run --rm \
+          -v $(pwd)/test-nginx.conf:/tmp/nginx.conf \
+          -v $(pwd)/test-logs:/logs \
+          -v $(pwd)/test-logs/blocked-ips.map:/etc/nginx/blocked-ips.map \
+          -v $(pwd)/test-logs/whitelisted-ips.map:/etc/nginx/whitelisted-ips.map \
+          nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
+        rm -f test-nginx.conf
+        rm -rf test-logs
 
     - name: Build test Docker image
       run: docker build --no-cache . --file Dockerfile --tag test-image

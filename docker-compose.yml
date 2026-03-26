@@ -9,6 +9,7 @@ services:
       - UPSTREAM_SERVER=owl:8080
     volumes:
       - /cache:/var/cache/nginx
+      - /logs:/logs
     networks:
       - owlery_network
     ports:

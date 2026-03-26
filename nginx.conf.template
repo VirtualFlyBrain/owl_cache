@@ -11,13 +11,56 @@ http {
     keepalive_timeout 65s;
     keepalive_requests 10000;
 
+    # Extract the left-most X-Forwarded-For IP (original client) when present.
+    map $http_x_forwarded_for $client_ip_for_security {
+        default $remote_addr;
+        "~^\s*([^,\s]+)" $1;
+    }
+
+    # Block common automated probing paths before they reach the upstream.
+    map $request_uri $is_probe_request {
+        default 0;
+        ~*(?:^|/).*\.(?:php\d*|phtml|phar|asp|aspx|jsp|cgi|pl)(?:$|[/?]) 1;
+        ~*(?:^|/)(?:wp-admin|wp-login\.php|xmlrpc\.php|phpmyadmin|pma|adminer|cgi-bin|vendor/phpunit)(?:$|[/?]) 1;
+        ~*(?:^|/)\.(?:env|git|svn|hg|DS_Store)(?:$|[/?]) 1;
+        ~*(?:\.\./|etc/passwd|proc/self/environ|php://|auto_prepend_file|allow_url_include|%00) 1;
+    }
+
+    # Generated at container startup from /logs/whitelist.txt (one IP per line).
+    map $client_ip_for_security $is_whitelisted_ip {
+        default 0;
+        include /etc/nginx/whitelisted-ips*.map;
+    }
+
+    # Generated at container startup from /logs/blocked.txt (one IP per line).
+    map $client_ip_for_security $is_blocked_ip {
+        default 0;
+        include /etc/nginx/blocked-ips*.map;
+    }
+
+    # Whitelist wins over blocklist and probe detection.
+    map "$is_whitelisted_ip:$is_blocked_ip" $should_block_ip {
+        default 0;
+        "0:1" 1;
+    }
+    map "$is_whitelisted_ip:$is_probe_request" $should_block_probe {
+        default 0;
+        "0:1" 1;
+    }
+
     log_format cache '$remote_addr - $remote_user [$time_local] "$request" '
                         '$status $body_bytes_sent "$http_referer" '
                         '"$http_user_agent" "$http_x_forwarded_for" '
                         '$upstream_cache_status $request_time $upstream_response_time';
+    log_format hack '$time_iso8601 client_ip="$client_ip_for_security" '
+                    'remote_addr="$remote_addr" xff="$http_x_forwarded_for" '
+                    'request="$request" status=$status host="$host" '
+                    'ua="$http_user_agent"';
 
     access_log /dev/stdout cache;
     access_log /var/log/nginx/cache-access.log cache;
+    access_log /logs/hacks/probes.log hack if=$should_block_probe;
+    access_log /logs/hacks/blocked.log hack if=$should_block_ip;
     error_log /dev/stderr warn;
 
     proxy_cache_path /var/cache/nginx/owlery levels=1:2 keys_zone=owlery_cache:100m max_size=${CACHE_MAX_SIZE} inactive=5y use_temp_path=off;
@@ -39,6 +82,14 @@ http {
 
     server {
         listen 80;
+
+        if ($should_block_ip) {
+            return 403;
+        }
+
+        if ($should_block_probe) {
+            return 403;
+        }
 
         location = /status {
             access_log off;
@@ -94,6 +145,14 @@ http {
 
     server {
         listen 8080;
+
+        if ($should_block_ip) {
+            return 403;
+        }
+
+        if ($should_block_probe) {
+            return 403;
+        }
 
         location = /status {
             access_log off;

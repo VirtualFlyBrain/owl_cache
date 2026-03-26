@@ -4,6 +4,8 @@
 
 A high-performance caching proxy server that sits in front of OWL reasoning services to dramatically speed up query responses. Built on NGINX Alpine with a 6-month cache TTL, stale-while-revalidate pattern, and 5-year disk retention so a cached response is always available.
 
+The proxy also includes security guardrails to refuse common scanner/probing requests before they reach Owlery, with optional IP block and whitelist files under `/logs`.
+
 ## Usage Examples
 
 ### Basic Usage
@@ -29,6 +31,9 @@ services:
     ports:
       - "80:80"
       - "8080:8080"
+    volumes:
+      - /cache:/var/cache/nginx
+      - /logs:/logs
     environment:
       - UPSTREAM_SERVER=owl:8080  # For production with owl service
       - CACHE_MAX_SIZE=1t         # 1TB cache size for high-traffic deployments
@@ -93,6 +98,35 @@ Example response:
 - `STATUS_POLL_INTERVAL`: Seconds between `/status` refreshes (default: `5`)
 - `HEALTH_LOG_INTERVAL`: Seconds between periodic upstream health log lines when state is unchanged (default: `300`)
 
+### Security Filtering and Blocking
+
+- **Probe filtering**: Requests matching common probing signatures (for example `*.php`, `wp-login.php`, `.env`, `phpmyadmin`, path traversal payloads) are immediately refused with HTTP `403` and are **not** forwarded upstream.
+- **Probe log output**: Refused probe requests are logged to `/logs/hacks/probes.log`, including both raw `X-Forwarded-For` and the extracted left-most client IP.
+- **Manual IP blocklist**: Add one IPv4/IPv6 address per line in `/logs/blocked.txt` (comments allowed with `#`).
+- **Manual IP whitelist**: Add one IPv4/IPv6 address per line in `/logs/whitelist.txt` (comments allowed with `#`).
+
+Example `/logs/blocked.txt`:
+
+```txt
+203.0.113.10
+# office VPN egress
+2001:db8::1234
+```
+
+Example `/logs/whitelist.txt`:
+
+```txt
+203.0.113.50
+# trusted monitoring source
+2001:db8::beef
+```
+
+Blocked IP requests return HTTP `403` and are logged to `/logs/hacks/blocked.log`.
+
+Whitelist entries take precedence over both the blocklist and probe filter.
+
+Blocklist/whitelist entries are loaded when the container starts. If you update `/logs/blocked.txt` or `/logs/whitelist.txt`, restart the container to apply changes.
+
 ### Cache Headers
 
 The proxy adds helpful headers to responses:
@@ -150,6 +184,11 @@ docker pull virtualflybrain/owl_cache:latest
 # Create cache directory
 mkdir -p /cache
 chown -R 101:101 /cache
+
+# Create persistent logs + blocklist file
+mkdir -p /logs/hacks
+touch /logs/blocked.txt
+touch /logs/whitelist.txt
 
 # Deploy with compose
 docker-compose up -d
