@@ -50,10 +50,10 @@ export DNS_RESOLVER="${DNS_RESOLVER:-8.8.8.8}"
 
 case "$(printf '%s' "${FORCE_CACHE_REFRESH_ON_REQUEST:-false}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)
-        FORCE_CACHE_REFRESH_ON_REQUEST=1
+        export FORCE_CACHE_REFRESH_ON_REQUEST=1
         ;;
     *)
-        FORCE_CACHE_REFRESH_ON_REQUEST=0
+        export FORCE_CACHE_REFRESH_ON_REQUEST=0
         ;;
 esac
 
