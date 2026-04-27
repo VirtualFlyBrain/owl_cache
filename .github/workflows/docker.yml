@@ -30,8 +30,9 @@ jobs:
         CACHE_MAX_SIZE: 20g
         CACHE_STALE_TIME: 6M
         DNS_RESOLVER: 8.8.8.8
+        FORCE_CACHE_REFRESH_ON_REQUEST: 0
       run: |
-        envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER}' < nginx.conf.template > test-nginx.conf
+        envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER} ${FORCE_CACHE_REFRESH_ON_REQUEST}' < nginx.conf.template > test-nginx.conf
         mkdir -p test-logs/hacks
         touch test-logs/blocked.txt test-logs/whitelist.txt test-logs/blocked-ips.map test-logs/whitelisted-ips.map
         docker run --rm \
