@@ -98,6 +98,7 @@ Example response:
 - `STATUS_POLL_INTERVAL`: Seconds between `/status` refreshes (default: `5`)
 - `HEALTH_LOG_INTERVAL`: Seconds between periodic upstream health log lines when state is unchanged (default: `300`)
 - `AUTO_BLOCK_SCANNERS`: Automatically append probe-source IPs from `/logs/hacks/probes.log` to `/logs/blocked.txt` and live-reload NGINX maps (default: `true`)
+- `FORCE_CACHE_REFRESH_ON_REQUEST`: When `true`, each incoming request bypasses the cache and fetches fresh content from upstream, updating the cache on demand instead of serving cached entries.
 
 ### Security Filtering and Blocking
 

@@ -70,6 +70,7 @@ http {
     proxy_cache_min_uses 1;
     proxy_cache_revalidate on;
     proxy_cache_methods GET HEAD;
+    set $force_refresh ${FORCE_CACHE_REFRESH_ON_REQUEST};
 
     proxy_cache_valid 200 ${CACHE_STALE_TIME};
     proxy_cache_valid 400 ${CACHE_STALE_TIME};
@@ -140,6 +141,7 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
+            proxy_cache_bypass $force_refresh;
             proxy_cache owlery_cache;
         }
     }
@@ -203,6 +205,7 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
+            proxy_cache_bypass $force_refresh;
             proxy_cache owlery_cache;
         }
     }

@@ -48,11 +48,20 @@ export CACHE_MAX_SIZE="${CACHE_MAX_SIZE:-20g}"
 export CACHE_STALE_TIME="${CACHE_STALE_TIME:-6M}"
 export DNS_RESOLVER="${DNS_RESOLVER:-8.8.8.8}"
 
+case "$(printf '%s' "${FORCE_CACHE_REFRESH_ON_REQUEST:-false}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on)
+        FORCE_CACHE_REFRESH_ON_REQUEST=1
+        ;;
+    *)
+        FORCE_CACHE_REFRESH_ON_REQUEST=0
+        ;;
+esac
+
 prepare_log_paths
 generate_ip_map "$BLOCKLIST_SOURCE" "$BLOCKLIST_MAP" "blocked"
 generate_ip_map "$WHITELIST_SOURCE" "$WHITELIST_MAP" "whitelisted"
 
-envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER}' \
+envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER} ${FORCE_CACHE_REFRESH_ON_REQUEST}' \
     < /etc/nginx/nginx.conf.template \
     > /etc/nginx/nginx.conf
 
