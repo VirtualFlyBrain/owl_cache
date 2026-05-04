@@ -10,6 +10,7 @@ http {
     resolver_timeout 5s;
     keepalive_timeout 65s;
     keepalive_requests 10000;
+    map_hash_bucket_size 128;
 
     # Extract the left-most X-Forwarded-For IP (original client) when present.
     map $http_x_forwarded_for $client_ip_for_security {
