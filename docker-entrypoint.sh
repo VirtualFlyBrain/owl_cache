@@ -29,16 +29,20 @@ generate_ip_map() {
     tmp_map="$(mktemp /tmp/${label}-ips.XXXXXX)"
     : > "$tmp_map"
 
-    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-        line="$(printf '%s' "$raw_line" | tr -d '\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
-        [ -z "$line" ] && continue
+    {
+        while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+            line="$(printf '%s' "$raw_line" | tr -d '\r' | tr 'A-F' 'a-f' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [ -z "$line" ] && continue
 
-        if printf '%s' "$line" | grep -Eq '^[0-9A-Fa-f:.]+$'; then
-            printf '%s 1;\n' "$line" >> "$tmp_map"
-        else
-            printf 'Ignoring invalid %s IP entry in %s: %s\n' "$label" "$source_file" "$raw_line" >&2
-        fi
-    done < "$source_file"
+            if printf '%s' "$line" | grep -Eq '^[0-9a-f:.]+$'; then
+                printf '%s\n' "$line"
+            else
+                printf 'Ignoring invalid %s IP entry in %s: %s\n' "$label" "$source_file" "$raw_line" >&2
+            fi
+        done < "$source_file"
+    } | sort -u | while IFS= read -r line; do
+        printf '%s 1;\n' "$line" >> "$tmp_map"
+    done
 
     mv "$tmp_map" "$target_map"
 }
