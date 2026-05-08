@@ -77,9 +77,18 @@ http {
 
     proxy_cache_valid 200 ${CACHE_STALE_TIME};
     proxy_cache_valid 400 ${CACHE_STALE_TIME};
-    proxy_cache_valid 404 600s;
+    # Note: 404 is intentionally NOT listed here. Caching a transient
+    # "not found" poisons the cache: combined with inactive=5y and
+    # proxy_cache_use_stale below, a single bad upstream response would
+    # otherwise keep being served as STALE 404 for that URI long after
+    # the upstream had recovered. Status codes not listed here are not
+    # cached, which is what we want for 404.
 
-    proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504 http_404;
+    # http_404 was previously listed here. That meant "if upstream returns
+    # 404, keep serving stale" -- which prevented a recovered upstream from
+    # ever displacing a cached 404. Drop it so 404 responses are passed
+    # straight through and never overwrite a good cached entry.
+    proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
     proxy_cache_background_update on;
     proxy_cache_lock on;
     proxy_cache_lock_timeout 30s;
