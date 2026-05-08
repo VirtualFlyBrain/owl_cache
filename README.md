@@ -137,6 +137,26 @@ The proxy adds helpful headers to responses:
 - `X-Cache-Status`: `HIT`, `MISS`, `EXPIRED`, `STALE`, `UPDATING`, or `REVALIDATED`
 - `X-Cache-Key`: The cache key used for the request
 
+### Selective 404 cache eviction
+
+404 responses are not cached going forward, but a long-lived cache may still
+contain 404 entries written before this change. Wiping the whole cache is
+expensive, so the image ships with a small helper that finds and deletes
+only files whose stored response status is 404:
+
+```bash
+# inside a running cache container
+docker exec -it owlery-cache purge-cached-404s.sh           # dry run, lists candidates
+docker exec -it owlery-cache purge-cached-404s.sh --apply   # delete matching files
+```
+
+The script identifies entries by matching the response status line
+(`^HTTP/1.x 404 `) inside each cache file; entries with a 200 response that
+happens to contain the text "HTTP/1.1 404" elsewhere in the body are not
+affected. Files removed from disk are simply treated as `MISS` on the next
+request — no nginx reload required. The cache directory is taken from
+`$CACHE_DIR` (default `/var/cache/nginx/owlery`).
+
 ## Performance
 
 - **Cache TTL**: 6 months for successful responses (configurable via `CACHE_STALE_TIME`)
