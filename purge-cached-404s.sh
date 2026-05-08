@@ -53,8 +53,10 @@ CANDIDATES="$(mktemp)"
 trap 'rm -f "$CANDIDATES"' EXIT
 
 # -r recursive, -l list filenames, -a treat binary as text,
-# --max-count=1 stop reading each file after the first match.
-grep -rla --max-count=1 "$PATTERN" "$CACHE_DIR" > "$CANDIDATES" 2>/dev/null || true
+# -m 1 stop reading each file after the first match. Use the short
+# form: this image runs Alpine/BusyBox grep, which does not accept
+# the GNU long option --max-count=1.
+grep -rla -m 1 "$PATTERN" "$CACHE_DIR" > "$CANDIDATES" 2>/dev/null || true
 
 found=$(wc -l < "$CANDIDATES" | tr -d ' ')
 
