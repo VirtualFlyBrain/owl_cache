@@ -107,6 +107,21 @@ is_valid_ip() {
     printf '%s' "$1" | grep -Eq '^[0-9A-Fa-f:.]+$'
 }
 
+# Loopback and private IPs cannot legitimately reach nginx as $remote_addr
+# from the outside; if one shows up in the probe log it is because a scanner
+# spoofed X-Forwarded-For. Auto-blocking such an IP locks out the local
+# health monitor (and anything else on the same bridge network), so refuse.
+is_safe_to_block() {
+    case "$1" in
+        127.*|::1) return 1 ;;
+        10.*|192.168.*) return 1 ;;
+        172.1[6-9].*|172.2[0-9].*|172.3[01].*) return 1 ;;
+        fc*|fd*) return 1 ;;
+        fe8*|fe9*|fea*|feb*) return 1 ;;
+    esac
+    return 0
+}
+
 is_ip_listed() {
     source_file="$1"
     ip="$2"
@@ -146,6 +161,10 @@ generate_ip_map() {
             [ -z "$line" ] && continue
 
             if is_valid_ip "$line"; then
+                if [ "$label" = "blocked" ] && ! is_safe_to_block "$line"; then
+                    printf 'Refusing to compile loopback/private IP into blocked map: %s\n' "$line" >&2
+                    continue
+                fi
                 printf '%s\n' "$line"
             else
                 printf 'Ignoring invalid %s IP entry in %s: %s\n' "$label" "$source_file" "$raw_line" >&2
@@ -213,6 +232,13 @@ update_auto_blocklist_from_probe_log() {
         ip="$(printf '%s\n' "$line" | sed -n 's/.*client_ip="\([^"]*\)".*/\1/p')"
         [ -z "$ip" ] && continue
         is_valid_ip "$ip" || continue
+
+        # Never auto-block loopback or RFC1918 addresses -- they only land in
+        # the probe log via spoofed X-Forwarded-For.
+        if ! is_safe_to_block "$ip"; then
+            echo "$(date): Refusing to auto-block loopback/private IP from probe log: $ip" >&2
+            continue
+        fi
 
         # Whitelisted IPs remain exempt even if they trigger probe patterns.
         if is_ip_listed "$WHITELIST_SOURCE" "$ip"; then

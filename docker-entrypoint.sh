@@ -22,6 +22,20 @@ prepare_log_paths() {
     touch "$WHITELIST_MAP"
 }
 
+# Loopback and private IPs must never end up in the blocked map -- they only
+# get there via spoofed X-Forwarded-For and would lock out the local health
+# monitor and any other internal caller.
+is_safe_to_block() {
+    case "$1" in
+        127.*|::1) return 1 ;;
+        10.*|192.168.*) return 1 ;;
+        172.1[6-9].*|172.2[0-9].*|172.3[01].*) return 1 ;;
+        fc*|fd*) return 1 ;;
+        fe8*|fe9*|fea*|feb*) return 1 ;;
+    esac
+    return 0
+}
+
 generate_ip_map() {
     source_file="$1"
     target_map="$2"
@@ -35,6 +49,10 @@ generate_ip_map() {
             [ -z "$line" ] && continue
 
             if printf '%s' "$line" | grep -Eq '^[0-9a-f:.]+$'; then
+                if [ "$label" = "blocked" ] && ! is_safe_to_block "$line"; then
+                    printf 'Refusing to compile loopback/private IP into blocked map: %s\n' "$line" >&2
+                    continue
+                fi
                 printf '%s\n' "$line"
             else
                 printf 'Ignoring invalid %s IP entry in %s: %s\n' "$label" "$source_file" "$raw_line" >&2
