@@ -71,17 +71,17 @@ http {
     proxy_cache_min_uses 1;
     proxy_cache_revalidate on;
     proxy_cache_methods GET HEAD;
-    # Per-request force-refresh: an `X-Force-Refresh: true|1|yes` header on a
-    # request bypasses the cache and writes the upstream response into the
-    # canonical cache slot (proxy_cache_bypass without proxy_no_cache). Used
-    # by the post-release VFBquery warmup tool to overwrite v3-cached entries
-    # for every query-type x entity-id tuple, so users never see a cold miss.
-    # FORCE_CACHE_REFRESH_ON_REQUEST remains as a global "treat every request
-    # as a refresh" nuclear toggle and supplies the default when the header
-    # is absent.
-    map $http_x_force_refresh $force_refresh {
+    # Per-request force-refresh: trusted callers (whitelisted IPs) may send an
+    # `X-Force-Refresh: true|1|yes|on` header to bypass the cache and write the
+    # upstream response into the canonical cache slot (proxy_cache_bypass without
+    # proxy_no_cache). Used by the post-release VFBquery warmup tool to overwrite
+    # v3-cached entries for every query-type x entity-id tuple, so users never see a cold miss.
+    # FORCE_CACHE_REFRESH_ON_REQUEST remains as a global "treat every request as a refresh"
+    # nuclear toggle and supplies the default when the header is absent (or the client is not
+    # whitelisted).
+    map "$is_whitelisted_ip:$http_x_force_refresh" $force_refresh {
         default ${FORCE_CACHE_REFRESH_ON_REQUEST};
-        "~*^(true|1|yes)$" 1;
+        "~*^1:(true|1|yes|on)$" 1;
     }
 
     proxy_cache_valid 200 ${CACHE_STALE_TIME};
