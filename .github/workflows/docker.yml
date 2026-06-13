@@ -34,12 +34,13 @@ jobs:
       run: |
         envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER} ${FORCE_CACHE_REFRESH_ON_REQUEST}' < nginx.conf.template > test-nginx.conf
         mkdir -p test-logs/hacks
-        touch test-logs/blocked.txt test-logs/whitelist.txt test-logs/blocked-ips.map test-logs/whitelisted-ips.map
+        touch test-logs/blocked.txt test-logs/whitelist.txt test-logs/blocked-ips.map test-logs/whitelisted-ips.map test-logs/whitelisted-cidrs.map
         docker run --rm \
           -v $(pwd)/test-nginx.conf:/tmp/nginx.conf \
           -v $(pwd)/test-logs:/logs \
           -v $(pwd)/test-logs/blocked-ips.map:/etc/nginx/blocked-ips.map \
           -v $(pwd)/test-logs/whitelisted-ips.map:/etc/nginx/whitelisted-ips.map \
+          -v $(pwd)/test-logs/whitelisted-cidrs.map:/etc/nginx/whitelisted-cidrs.map \
           nginx:1.26-alpine nginx -t -c /tmp/nginx.conf
         rm -f test-nginx.conf
         rm -rf test-logs

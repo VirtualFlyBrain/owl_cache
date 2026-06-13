@@ -15,7 +15,7 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY purge-cached-404s.sh /usr/local/bin/purge-cached-404s.sh
 
 RUN mkdir -p /var/cache/nginx/owlery /logs/hacks && \
-    touch /logs/blocked.txt /logs/whitelist.txt /etc/nginx/blocked-ips.map /etc/nginx/whitelisted-ips.map && \
+    touch /logs/blocked.txt /logs/whitelist.txt /etc/nginx/blocked-ips.map /etc/nginx/whitelisted-ips.map /etc/nginx/whitelisted-cidrs.map && \
     chown -R nginx:nginx /var/cache/nginx /logs && \
     chmod +x /usr/local/bin/health-monitor.sh /usr/local/bin/docker-entrypoint.sh /usr/local/bin/purge-cached-404s.sh && \
     apk add --no-cache gettext
