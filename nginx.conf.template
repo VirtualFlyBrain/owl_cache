@@ -28,10 +28,25 @@ http {
         ~*(?:\.\./|etc/passwd|proc/self/environ|php://|auto_prepend_file|allow_url_include|%00) 1;
     }
 
-    # Generated at container startup from /logs/whitelist.txt (one IP per line).
-    map $client_ip_for_security $is_whitelisted_ip {
+    # Generated at container startup from /logs/whitelist.txt.
+    # Two compiled artefacts: literal IPs go through a `map`; CIDR ranges
+    # go through a `geo` block that performs proper subnet matching.
+    # The downstream $is_whitelisted_ip OR-combines both, so existing
+    # consumers (force_refresh, should_block_*) don't change.
+    map $client_ip_for_security $is_whitelisted_ip_literal {
         default 0;
         include /etc/nginx/whitelisted-ips*.map;
+    }
+    geo $client_ip_for_security $is_whitelisted_cidr {
+        default 0;
+        # `include` with no matching files is fine -- docker-entrypoint
+        # touches an empty whitelisted-cidrs.map at startup before nginx boots.
+        include /etc/nginx/whitelisted-cidrs*.map;
+    }
+    map "$is_whitelisted_ip_literal:$is_whitelisted_cidr" $is_whitelisted_ip {
+        default 0;
+        "~^1:" 1;
+        "~:1$" 1;
     }
 
     # Generated at container startup from /logs/blocked.txt (one IP per line).
