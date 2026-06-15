@@ -44,9 +44,13 @@ http {
     }
     geo $client_ip_for_security $is_whitelisted_cidr {
         default 0;
-        # `include` with no matching files is fine -- docker-entrypoint
-        # touches an empty whitelisted-cidrs.map at startup before nginx boots.
-        include /etc/nginx/whitelisted-cidrs*.map;
+        # Unlike `map`, the `geo` block's `include` does NOT expand wildcards --
+        # it opens the path literally via the geo loader, so a glob such as
+        # whitelisted-cidrs*.map fails with "No such file or directory". A plain
+        # literal include is safe here because docker-entrypoint.sh (and the
+        # Dockerfile) always touch an empty whitelisted-cidrs.map before nginx
+        # boots, so the file is guaranteed to exist.
+        include /etc/nginx/whitelisted-cidrs.map;
     }
     map "$is_whitelisted_ip_literal:$is_whitelisted_cidr" $is_whitelisted_ip {
         default 0;
