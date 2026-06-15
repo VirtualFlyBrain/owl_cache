@@ -99,6 +99,9 @@ Example response:
 - `HEALTH_LOG_INTERVAL`: Seconds between periodic upstream health log lines when state is unchanged (default: `300`)
 - `AUTO_BLOCK_SCANNERS`: Automatically append probe-source IPs from `/logs/hacks/probes.log` to `/logs/blocked.txt` and live-reload NGINX maps (default: `true`)
 - `FORCE_CACHE_REFRESH_ON_REQUEST`: When `true`, each incoming request bypasses the cache and fetches fresh content from upstream, updating the cache on demand instead of serving cached entries.
+- `WORKER_PROCESSES`: Number of NGINX worker processes (default: `auto`). `auto` spawns one worker per host CPU core, but it reads the host's online core count and **ignores the container's cgroup CPU quota** — on a shared/Rancher host pin this to the CPU reservation (e.g. `2`) so you don't over-spawn workers that can't run in parallel. A single container with a coherent local cache is the only safe way to share one cache directory across workers; do not point multiple containers at the same cache volume.
+- `WORKER_CONNECTIONS`: Max simultaneous connections per worker (default: `4096`). Effective client concurrency is roughly `WORKER_PROCESSES × WORKER_CONNECTIONS`, halved on cache MISS since each client connection also opens an upstream connection.
+- `WORKER_RLIMIT_NOFILE`: Per-worker open-file-descriptor ceiling (default: `65535`). Each client connection plus every open cached file uses a descriptor, so the OS default of 1024 throttles a busy cache. Must stay within the container's hard `nofile` ulimit — NGINX logs a warning and caps to the runtime limit if this is higher.
 
 ### Security Filtering and Blocking
 

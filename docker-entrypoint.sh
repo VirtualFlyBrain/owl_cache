@@ -112,6 +112,29 @@ export UPSTREAM_SERVER="${UPSTREAM_SERVER:-owl.virtualflybrain.org:80}"
 export CACHE_MAX_SIZE="${CACHE_MAX_SIZE:-20g}"
 export CACHE_STALE_TIME="${CACHE_STALE_TIME:-6M}"
 export DNS_RESOLVER="${DNS_RESOLVER:-8.8.8.8}"
+# Single-container concurrency knobs. By default we run nginx with 3/4 of the
+# visible cores (rounded down, floored at 1), leaving headroom for the health
+# monitor and the OS rather than nginx's native `auto`, which spawns one worker
+# per core. Set WORKER_PROCESSES to a positive integer to override; an empty
+# value or the literal `auto` falls back to the 3/4 calculation.
+# Caveat: nproc honours a cpuset but ignores a CFS quota (--cpus / NanoCpus), so
+# under a quota-only limit on a shared host, pin WORKER_PROCESSES explicitly.
+resolve_worker_processes() {
+    case "${WORKER_PROCESSES:-auto}" in
+        ''|auto)
+            cores="$(nproc 2>/dev/null || echo 1)"
+            workers=$(( cores * 3 / 4 ))
+            [ "$workers" -lt 1 ] && workers=1
+            printf '%s' "$workers"
+            ;;
+        *)
+            printf '%s' "$WORKER_PROCESSES"
+            ;;
+    esac
+}
+export WORKER_PROCESSES="$(resolve_worker_processes)"
+export WORKER_CONNECTIONS="${WORKER_CONNECTIONS:-4096}"
+export WORKER_RLIMIT_NOFILE="${WORKER_RLIMIT_NOFILE:-65535}"
 
 case "$(printf '%s' "${FORCE_CACHE_REFRESH_ON_REQUEST:-false}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)
@@ -126,7 +149,7 @@ prepare_log_paths
 generate_ip_map "$BLOCKLIST_SOURCE" "$BLOCKLIST_MAP" "blocked"
 generate_whitelist_maps "$WHITELIST_SOURCE" "$WHITELIST_MAP" "$WHITELIST_CIDR_MAP"
 
-envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER} ${FORCE_CACHE_REFRESH_ON_REQUEST}' \
+envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVER} ${FORCE_CACHE_REFRESH_ON_REQUEST} ${WORKER_PROCESSES} ${WORKER_CONNECTIONS} ${WORKER_RLIMIT_NOFILE}' \
     < /etc/nginx/nginx.conf.template \
     > /etc/nginx/nginx.conf
 

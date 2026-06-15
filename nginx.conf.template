@@ -1,7 +1,12 @@
-worker_processes auto;
+worker_processes ${WORKER_PROCESSES};
+# Raise the per-worker FD ceiling: each client connection plus every open
+# cached file consumes a descriptor, so the 1024 default throttles a busy
+# cache. Clamped by the container's hard ulimit -- nginx warns and caps if
+# the runtime nofile limit is lower than this value.
+worker_rlimit_nofile ${WORKER_RLIMIT_NOFILE};
 
 events {
-    worker_connections 4096;
+    worker_connections ${WORKER_CONNECTIONS};
     multi_accept on;
 }
 
