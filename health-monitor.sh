@@ -13,7 +13,14 @@ BLOCKLIST_SOURCE=${BLOCKLIST_SOURCE:-/logs/blocked.txt}
 BLOCKLIST_MAP=${BLOCKLIST_MAP:-/etc/nginx/blocked-ips.map}
 WHITELIST_SOURCE=${WHITELIST_SOURCE:-/logs/whitelist.txt}
 WHITELIST_MAP=${WHITELIST_MAP:-/etc/nginx/whitelisted-ips.map}
+WHITELIST_CIDR_MAP=${WHITELIST_CIDR_MAP:-/etc/nginx/whitelisted-cidrs.map}
 AUTO_BLOCK_SCANNERS=${AUTO_BLOCK_SCANNERS:-true}
+
+# List compilation is shared with docker-entrypoint.sh, which compiles the same
+# two files once at startup. See ip-maps.sh for why it is not inlined here.
+IP_MAPS_LIB=${IP_MAPS_LIB:-/usr/local/bin/ip-maps.sh}
+# shellcheck source=ip-maps.sh
+. "$IP_MAPS_LIB"
 
 UPSTREAM_HOST=$(printf '%s' "$UPSTREAM_SERVER" | cut -d: -f1)
 UPSTREAM_PORT=$(printf '%s' "$UPSTREAM_SERVER" | cut -d: -f2)
@@ -103,25 +110,9 @@ is_truthy() {
     esac
 }
 
-is_valid_ip() {
-    printf '%s' "$1" | grep -Eq '^[0-9A-Fa-f:.]+$'
-}
-
-# Loopback and private IPs cannot legitimately reach nginx as $remote_addr
-# from the outside; if one shows up in the probe log it is because a scanner
-# spoofed X-Forwarded-For. Auto-blocking such an IP locks out the local
-# health monitor (and anything else on the same bridge network), so refuse.
-is_safe_to_block() {
-    case "$1" in
-        127.*|::1) return 1 ;;
-        10.*|192.168.*) return 1 ;;
-        172.1[6-9].*|172.2[0-9].*|172.3[01].*) return 1 ;;
-        fc*|fd*) return 1 ;;
-        fe8*|fe9*|fea*|feb*) return 1 ;;
-    esac
-    return 0
-}
-
+# Exact-match membership test, used to avoid appending a duplicate to
+# blocked.txt. The whitelist side needs range awareness and uses
+# is_ip_whitelisted from ip-maps.sh instead.
 is_ip_listed() {
     source_file="$1"
     ip="$2"
@@ -139,42 +130,15 @@ prepare_security_paths() {
         "$(dirname "$BLOCKLIST_SOURCE")" \
         "$(dirname "$BLOCKLIST_MAP")" \
         "$(dirname "$WHITELIST_SOURCE")" \
-        "$(dirname "$WHITELIST_MAP")"
+        "$(dirname "$WHITELIST_MAP")" \
+        "$(dirname "$WHITELIST_CIDR_MAP")"
 
     touch "$PROBE_LOG"
     touch "$BLOCKLIST_SOURCE"
     touch "$BLOCKLIST_MAP"
     touch "$WHITELIST_SOURCE"
     touch "$WHITELIST_MAP"
-}
-
-generate_ip_map() {
-    source_file="$1"
-    target_map="$2"
-    label="$3"
-    tmp_map="$(mktemp /tmp/${label}-ips.XXXXXX)"
-    : > "$tmp_map"
-
-    {
-        while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-            line="$(printf '%s' "$raw_line" | tr -d '\r' | tr 'A-F' 'a-f' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
-            [ -z "$line" ] && continue
-
-            if is_valid_ip "$line"; then
-                if [ "$label" = "blocked" ] && ! is_safe_to_block "$line"; then
-                    printf 'Refusing to compile loopback/private IP into blocked map: %s\n' "$line" >&2
-                    continue
-                fi
-                printf '%s\n' "$line"
-            else
-                printf 'Ignoring invalid %s IP entry in %s: %s\n' "$label" "$source_file" "$raw_line" >&2
-            fi
-        done < "$source_file"
-    } | sort -u | while IFS= read -r line; do
-        printf '%s 1;\n' "$line" >> "$tmp_map"
-    done
-
-    mv "$tmp_map" "$target_map"
+    touch "$WHITELIST_CIDR_MAP"
 }
 
 reload_nginx() {
@@ -194,7 +158,7 @@ sync_ip_maps_if_needed() {
     fi
 
     generate_ip_map "$BLOCKLIST_SOURCE" "$BLOCKLIST_MAP" "blocked"
-    generate_ip_map "$WHITELIST_SOURCE" "$WHITELIST_MAP" "whitelisted"
+    generate_whitelist_maps "$WHITELIST_SOURCE" "$WHITELIST_MAP" "$WHITELIST_CIDR_MAP"
     last_blocklist_signature="$blocklist_signature"
     last_whitelist_signature="$whitelist_signature"
     reload_nginx
@@ -241,7 +205,8 @@ update_auto_blocklist_from_probe_log() {
         fi
 
         # Whitelisted IPs remain exempt even if they trigger probe patterns.
-        if is_ip_listed "$WHITELIST_SOURCE" "$ip"; then
+        # Range-aware: an address inside a whitelisted CIDR is exempt too.
+        if is_ip_whitelisted "$WHITELIST_SOURCE" "$ip"; then
             continue
         fi
 
