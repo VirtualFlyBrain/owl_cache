@@ -10,6 +10,12 @@ WHITELIST_MAP="/etc/nginx/whitelisted-ips.map"
 # Plain `map` keys are literal strings and can't match a range.
 WHITELIST_CIDR_MAP="/etc/nginx/whitelisted-cidrs.map"
 
+# List compilation is shared with health-monitor.sh, which recompiles the same
+# two files on every change. See ip-maps.sh for why it is not inlined here.
+IP_MAPS_LIB="${IP_MAPS_LIB:-/usr/local/bin/ip-maps.sh}"
+# shellcheck source=ip-maps.sh
+. "$IP_MAPS_LIB"
+
 prepare_log_paths() {
     # Ensure required runtime directories exist, including fresh bind mounts/volumes.
     mkdir -p \
@@ -25,87 +31,6 @@ prepare_log_paths() {
     touch "$BLOCKLIST_MAP"
     touch "$WHITELIST_MAP"
     touch "$WHITELIST_CIDR_MAP"
-}
-
-# Loopback and private IPs must never end up in the blocked map -- they only
-# get there via spoofed X-Forwarded-For and would lock out the local health
-# monitor and any other internal caller.
-is_safe_to_block() {
-    case "$1" in
-        127.*|::1) return 1 ;;
-        10.*|192.168.*) return 1 ;;
-        172.1[6-9].*|172.2[0-9].*|172.3[01].*) return 1 ;;
-        fc*|fd*) return 1 ;;
-        fe8*|fe9*|fea*|feb*) return 1 ;;
-    esac
-    return 0
-}
-
-generate_ip_map() {
-    source_file="$1"
-    target_map="$2"
-    label="$3"
-    tmp_map="$(mktemp /tmp/${label}-ips.XXXXXX)"
-    : > "$tmp_map"
-
-    {
-        while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-            line="$(printf '%s' "$raw_line" | tr -d '\r' | tr 'A-F' 'a-f' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
-            [ -z "$line" ] && continue
-
-            if printf '%s' "$line" | grep -Eq '^[0-9a-f:.]+$'; then
-                if [ "$label" = "blocked" ] && ! is_safe_to_block "$line"; then
-                    printf 'Refusing to compile loopback/private IP into blocked map: %s\n' "$line" >&2
-                    continue
-                fi
-                printf '%s\n' "$line"
-            else
-                printf 'Ignoring invalid %s IP entry in %s: %s\n' "$label" "$source_file" "$raw_line" >&2
-            fi
-        done < "$source_file"
-    } | sort -u | while IFS= read -r line; do
-        printf '%s 1;\n' "$line" >> "$tmp_map"
-    done
-
-    mv "$tmp_map" "$target_map"
-}
-
-# Compile whitelist.txt into TWO outputs:
-#   - plain IPs go to $ip_map (consumed by the existing nginx `map` block)
-#   - CIDR ranges go to $cidr_map (consumed by an nginx `geo` block)
-# Routing happens by line shape; everything else is flagged invalid.
-# Rancher pod-network ranges (10.42.0.0/16 by default for Canal/Flannel) are
-# the canonical use case -- without CIDR support the warmup tool running from
-# a pod can't be whitelisted for X-Force-Refresh.
-generate_whitelist_maps() {
-    source_file="$1"
-    ip_map="$2"
-    cidr_map="$3"
-    tmp_ip="$(mktemp /tmp/whitelisted-ips.XXXXXX)"
-    tmp_cidr="$(mktemp /tmp/whitelisted-cidrs.XXXXXX)"
-    : > "$tmp_ip"
-    : > "$tmp_cidr"
-
-    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-        line="$(printf '%s' "$raw_line" | tr -d '\r' | tr 'A-F' 'a-f' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
-        [ -z "$line" ] && continue
-
-        if printf '%s' "$line" | grep -Eq '^[0-9a-f:.]+/[0-9]+$'; then
-            # CIDR -- emitted in nginx `geo` syntax.
-            printf '%s 1;\n' "$line" >> "$tmp_cidr"
-        elif printf '%s' "$line" | grep -Eq '^[0-9a-f:.]+$'; then
-            # Plain IP -- emitted in nginx `map` syntax.
-            printf '%s 1;\n' "$line" >> "$tmp_ip"
-        else
-            printf 'Ignoring invalid whitelist entry in %s: %s\n' "$source_file" "$raw_line" >&2
-        fi
-    done < "$source_file"
-
-    # Dedupe each output independently; atomic publish via mv.
-    sort -u -o "$tmp_ip"   "$tmp_ip"
-    sort -u -o "$tmp_cidr" "$tmp_cidr"
-    mv "$tmp_ip"   "$ip_map"
-    mv "$tmp_cidr" "$cidr_map"
 }
 
 export UPSTREAM_SERVER="${UPSTREAM_SERVER:-owl.virtualflybrain.org:80}"

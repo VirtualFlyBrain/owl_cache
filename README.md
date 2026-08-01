@@ -109,7 +109,7 @@ Example response:
 - **Probe log output**: Refused probe requests are logged to `/logs/hacks/probes.log`, including both raw `X-Forwarded-For` and the extracted left-most client IP.
 - **Automatic scanner blocking**: When `AUTO_BLOCK_SCANNERS=true`, newly detected `client_ip` values in `/logs/hacks/probes.log` are appended to `/logs/blocked.txt` (unless already present or whitelisted), and NGINX is reloaded so the block takes effect without container restart.
 - **Manual IP blocklist**: Add one IPv4/IPv6 address per line in `/logs/blocked.txt` (comments allowed with `#`).
-- **Manual IP whitelist**: Add one IPv4/IPv6 address per line in `/logs/whitelist.txt` (comments allowed with `#`).
+- **Manual IP whitelist**: Add one IPv4/IPv6 address, or one CIDR range, per line in `/logs/whitelist.txt` (comments allowed with `#`). Ranges are matched as subnets, so a VPN or pod network whose addresses are reassigned per session can be whitelisted once instead of being re-added every time it changes.
 
 Example `/logs/blocked.txt`:
 
@@ -125,13 +125,30 @@ Example `/logs/whitelist.txt`:
 203.0.113.50
 # trusted monitoring source
 2001:db8::beef
+# whole networks, matched as subnets
+10.42.0.0/16
+2001:db8::/32
 ```
+
+The blocklist takes single addresses only. A range there would be far more damaging to get wrong than an over-broad whitelist, so a CIDR line in `/logs/blocked.txt` is refused and logged rather than compiled.
 
 Blocked IP requests return HTTP `403` and are logged to `/logs/hacks/blocked.log`.
 
 Whitelist entries take precedence over both the blocklist and probe filter.
 
-Blocklist/whitelist entries are watched continuously by the runtime monitor. Updates to `/logs/blocked.txt` or `/logs/whitelist.txt` are converted into map files and applied via `nginx -s reload` within a few seconds.
+Blocklist/whitelist entries are watched continuously by the runtime monitor. Updates to `/logs/blocked.txt` or `/logs/whitelist.txt` are converted into map files and applied via `nginx -s reload` within a few seconds. A rejected line is reported on the container log, so check there if an entry does not seem to take effect.
+
+### Per-request cache refresh
+
+A whitelisted caller may send `X-Force-Refresh: true` (`1`, `yes` and `on` also work) to bypass the cache for that one request. The upstream response is written into the same cache slot the request would otherwise have read, so the next ordinary caller gets the refreshed copy — this is `proxy_cache_bypass` without `proxy_no_cache`, and it is how the post-release VFBquery warmup tool refreshes entries without flushing the cache.
+
+The header is honoured only for addresses in `/logs/whitelist.txt`; from anywhere else it falls back to `FORCE_CACHE_REFRESH_ON_REQUEST` and is otherwise ignored. Nothing in the response says the header was refused, so confirm it took by reading `X-Cache-Status`:
+
+```bash
+curl -sS -o /dev/null -D - -H 'X-Force-Refresh: true' 'https://v3-cached.virtualflybrain.org/some/path' | grep -i '^x-cache-status'
+```
+
+`BYPASS` means the request went upstream and rewrote the cache slot. `HIT` means the header was ignored and the caller is not whitelisted.
 
 ### Cache Headers
 
