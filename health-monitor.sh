@@ -62,7 +62,8 @@ CACHE_BACKUP_STATE=${CACHE_BACKUP_STATE:-$STATUS_DIR/cache-backup.json}
 # when that job has not run in this container yet.
 json_state_or_null() {
     if [ -s "$1" ]; then
-        sed 's/^/    /' "$1"
+        # Indent every line but the first, which follows the key on its own line.
+        sed '1!s/^/    /' "$1"
     else
         printf 'null'
     fi
