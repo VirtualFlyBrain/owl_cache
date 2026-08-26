@@ -153,12 +153,23 @@ cache_lock_release() {
 # Run rsync over a batch file of relative paths from <src> to <dst>.
 # Whole-file copies (no delta computation: entries are immutable blobs),
 # newest wins, never delete, atomic per file via rsync's temp+rename.
+#
+# <tmpdir> must be OUTSIDE the nginx cache tree but on the same filesystem.
+# By default rsync writes its partial `.<name>.XXXXXX` next to the target;
+# nginx's cache loader walks the tree at startup, sees such a file as a
+# too-small cache entry and deletes it from under rsync (seen in 2.0.0 as
+# `[crit] cache file "..." is too small` followed by rsync stat/rename
+# failures). Keeping partials one level up avoids the loader entirely.
 cache_rsync_batch() {
-    src="$1"; dst="$2"; list="$3"; bwlimit="${4:-0}"
+    src="$1"; dst="$2"; list="$3"; bwlimit="${4:-0}"; tmpdir="${5:-}"
     # --files-from implies --relative, so `a/bc/<hash>` lands at the same
     # levels path under <dst> and the intermediate directories are created.
     set -- -a --whole-file --update --modify-window="$CACHE_MODIFY_WINDOW" \
         --files-from="$list" --quiet
+    if [ -n "$tmpdir" ]; then
+        mkdir -p "$tmpdir"
+        set -- "$@" --temp-dir="$tmpdir"
+    fi
     if [ "$bwlimit" != "0" ] && [ -n "$bwlimit" ]; then
         set -- "$@" --bwlimit="$bwlimit"
     fi
