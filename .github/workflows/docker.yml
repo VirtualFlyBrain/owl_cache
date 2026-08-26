@@ -86,7 +86,7 @@ jobs:
         docker logs test-container | grep -q 'Scheduled cache backup: crontab' || { echo "backup not scheduled"; docker logs test-container; exit 1; }
         docker exec test-container test -f /var/cache/nginx/owlery/0/00/00000000000000000000000000000001 || { echo "archive entry not restored"; docker logs test-container; exit 1; }
         # 127.0.0.1, not localhost: BusyBox wget resolves localhost to ::1 first and nginx listens on IPv4 only.
-        docker exec test-container wget -q -O - http://127.0.0.1/status | grep -q '"restore": {' || { echo "/status lacks archive.restore"; docker exec test-container wget -q -O - http://127.0.0.1/status; exit 1; }
+        docker exec test-container wget -q -O - http://127.0.0.1/status | grep -q '"restore": {' && docker exec test-container wget -q -O - http://127.0.0.1/status | grep -q '"state": "done"' || { echo "/status lacks archive.restore"; docker exec test-container wget -q -O - http://127.0.0.1/status; exit 1; }
         docker exec test-container cache-backup.sh --full | grep -q 'backup: done' || { echo "manual backup failed"; exit 1; }
         docker stop test-container || true
         docker rm test-container
