@@ -8,7 +8,11 @@ services:
     environment:
       - UPSTREAM_SERVER=owl:8080
     volumes:
-      - /cache:/var/cache/nginx
+      # Local node disk: what nginx serves from. Size CACHE_MAX_SIZE to it.
+      - /data/owl-cache:/var/cache/nginx
+      # Shared NFS archive: restored from in the background at start, backed
+      # up into daily at 03:00 (+ per-container jitter). See README.
+      - /cache:/cache
       - /logs:/logs
     networks:
       - owlery_network

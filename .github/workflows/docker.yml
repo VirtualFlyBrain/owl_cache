@@ -61,11 +61,17 @@ jobs:
         CACHE_STALE_TIME: 6M
         DNS_RESOLVER: 8.8.8.8
       run: |
+        # A fake archive with one entry: the container must restore it into
+        # the local cache in the background and report that in /status.
+        mkdir -p test-archive/owlery/0/00
+        printf 'KEY: GET/probe\nHTTP/1.1 200 OK\n\nprobe\n' > test-archive/owlery/0/00/00000000000000000000000000000001
+        chmod -R a+rwX test-archive   # the sync scripts run as the nginx user
         docker run -d --name test-container \
           -e UPSTREAM_SERVER \
           -e CACHE_MAX_SIZE \
           -e CACHE_STALE_TIME \
           -e DNS_RESOLVER \
+          -v $(pwd)/test-archive:/cache \
           test-image
         sleep 5
         if docker ps | grep -q test-container; then
@@ -75,8 +81,13 @@ jobs:
           docker logs test-container
           exit 1
         fi
+        docker logs test-container | grep -q 'Scheduled cache backup: crontab' || { echo "backup not scheduled"; docker logs test-container; exit 1; }
+        docker exec test-container test -f /var/cache/nginx/owlery/0/00/00000000000000000000000000000001 || { echo "archive entry not restored"; docker logs test-container; exit 1; }
+        docker exec test-container wget -q -O - http://localhost/status | grep -q '"restore": {' || { echo "/status lacks archive.restore"; docker exec test-container wget -q -O - http://localhost/status; exit 1; }
+        docker exec test-container cache-backup.sh --full | grep -q 'backup: done' || { echo "manual backup failed"; exit 1; }
         docker stop test-container || true
         docker rm test-container
+        sudo rm -rf test-archive
 
     - name: Build Docker image
       run: docker build . --file Dockerfile --tag virtualflybrain/owl_cache:${{ steps.meta.outputs.tag }}

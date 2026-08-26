@@ -70,6 +70,40 @@ case "$(printf '%s' "${FORCE_CACHE_REFRESH_ON_REQUEST:-false}" | tr '[:upper:]' 
         ;;
 esac
 
+# Cache archive handling. nginx serves from CACHE_LOCAL_DIR (node disk);
+# CACHE_ARCHIVE_DIR is the shared NFS volume every instance restores from at
+# start and backs up into on a schedule. See cache-restore.sh / cache-backup.sh
+# and README "Cache archive".
+export CACHE_ARCHIVE_DIR="${CACHE_ARCHIVE_DIR:-/cache}"
+export CACHE_LOCAL_DIR="${CACHE_LOCAL_DIR:-/var/cache/nginx}"
+# daily | weekly | off, plus CACHE_BACKUP_TIME (HH:MM, container local time)
+# and CACHE_BACKUP_WEEKDAY (0-6, Sunday=0, weekly only). Replicas add a
+# deterministic per-host offset of up to CACHE_BACKUP_JITTER_MINUTES so they do
+# not all hit the NAS in the same minute. CACHE_BACKUP_CRON, if set, is used
+# verbatim (5-field crontab spec) and receives no jitter.
+export CACHE_BACKUP_SCHEDULE="${CACHE_BACKUP_SCHEDULE:-daily}"
+export CACHE_BACKUP_TIME="${CACHE_BACKUP_TIME:-03:00}"
+export CACHE_BACKUP_WEEKDAY="${CACHE_BACKUP_WEEKDAY:-0}"
+export CACHE_BACKUP_JITTER_MINUTES="${CACHE_BACKUP_JITTER_MINUTES:-120}"
+
+CACHE_LIB="${CACHE_LIB:-/usr/local/bin/cache-lib.sh}"
+# shellcheck source=cache-lib.sh
+. "$CACHE_LIB"
+
+start_backup_scheduler() {
+    spec="$(cache_backup_cron_spec)"
+    if [ -z "$spec" ]; then
+        echo "Scheduled cache backup disabled (CACHE_BACKUP_SCHEDULE=$CACHE_BACKUP_SCHEDULE); run cache-backup.sh by hand"
+        return
+    fi
+    mkdir -p /etc/crontabs
+    # Container stdout is fd 1 of PID 1, so the backup log lands in `docker logs`.
+    # crond runs the job as root; cache-backup.sh drops to nginx itself.
+    printf '%s /usr/local/bin/cache-backup.sh >> /proc/1/fd/1 2>&1\n' "$spec" > /etc/crontabs/root
+    echo "Scheduled cache backup: crontab '$spec' (base ${CACHE_BACKUP_SCHEDULE} ${CACHE_BACKUP_TIME}, jitter up to ${CACHE_BACKUP_JITTER_MINUTES} min)"
+    crond -b -l 8 -L /dev/stdout
+}
+
 prepare_log_paths
 generate_ip_map "$BLOCKLIST_SOURCE" "$BLOCKLIST_MAP" "blocked"
 generate_whitelist_maps "$WHITELIST_SOURCE" "$WHITELIST_MAP" "$WHITELIST_CIDR_MAP"
@@ -78,5 +112,16 @@ envsubst '${UPSTREAM_SERVER} ${CACHE_MAX_SIZE} ${CACHE_STALE_TIME} ${DNS_RESOLVE
     < /etc/nginx/nginx.conf.template \
     > /etc/nginx/nginx.conf
 
+# The sync scripts run as nginx (see CACHE_RUN_AS): they need to write their
+# markers at the cache root and their state files next to status.json. Only
+# the top-level directories are chowned -- a recursive chown over millions of
+# cache entries would take longer than the restore.
+mkdir -p /var/run/nginx "$CACHE_LOCAL_DIR/owlery"
+chown nginx:nginx /var/run/nginx "$CACHE_LOCAL_DIR" "$CACHE_LOCAL_DIR/owlery" 2>/dev/null || true
+
 /usr/local/bin/health-monitor.sh &
+# Warm the local cache from the archive in the background; nginx serves
+# whatever has landed and treats the rest as ordinary misses meanwhile.
+/usr/local/bin/cache-restore.sh &
+start_backup_scheduler
 exec nginx -g 'daemon off;'
