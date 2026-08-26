@@ -179,17 +179,24 @@ with the newest version of each entry winning. The comparison is by mtime,
 so the nodes and the NAS must agree on time (NTP); `--modify-window=2`
 absorbs filesystem timestamp granularity, not clock skew.
 
-**Restore** (`cache-restore.sh`, started by the entrypoint in the background)
-walks the archive once, sorts entries newest first, and copies them in
-batches while NGINX is already serving. NGINX serves a cache file that
-appears on disk after it has started (verified against 1.26: a lookup that
-misses the in-memory index still opens and validates the file), so startup
-never waits for the copy. Requests whose entry has not landed yet are
-ordinary misses. Progress is reported under `archive.restore` in `/status`.
-A restore of ~1 TB / millions of files takes hours; an instance is fully
-warm when `archive.restore.state` is `done`. If the local volume persists
-across restarts, the `.restored` marker makes later starts skip the restore
-(`CACHE_RESTORE=always` forces it; `off` disables it).
+**Restore** (`cache-restore.sh`) walks the archive once, sorts entries
+newest first, and copies them in batches. By default
+(`CACHE_RESTORE_MODE=blocking`) it runs **before NGINX starts**, so a fresh
+instance only answers requests once its cache is fully warm; port 80 stays
+closed meanwhile, so give the orchestrator's health check enough time (on
+Rancher, raise the service's *initializing timeout* or rely on the load
+balancer's check) and keep a second instance serving. A restore of ~1 TB /
+millions of files takes hours. With `CACHE_RESTORE_MODE=background` NGINX
+starts immediately and the copy runs alongside it: NGINX serves a cache file
+that appears on disk after it has started (verified against 1.26), and
+requests whose entry has not landed yet are ordinary misses. Either way,
+progress is under `archive.restore` in `/status` (in blocking mode `/status`
+only becomes reachable when NGINX starts; watch the container log until
+then). If the local volume persists across restarts, the `.restored` marker
+makes later starts skip the restore (`CACHE_RESTORE=always` forces it; `off`
+disables it). rsync writes its partial files to `.rsync-tmp` beside the
+cache tree, never inside it, because NGINX's cache loader deletes any file
+in the tree that does not look like a complete entry.
 
 **Backup** (`cache-backup.sh`) lists entries written since the previous run
 from the local disk (`find -newer`; the NFS side is never walked) and copies
@@ -221,6 +228,7 @@ Variables (all optional):
 
 - `CACHE_ARCHIVE_DIR` (`/cache`), `CACHE_LOCAL_DIR` (`/var/cache/nginx`): the two roots; both hold an `owlery/` tree.
 - `CACHE_RESTORE`: `auto` (default; skip if `.restored` exists), `always`, `off`.
+- `CACHE_RESTORE_MODE`: `blocking` (default; restore, then start NGINX) or `background` (start NGINX, restore alongside).
 - `CACHE_RESTORE_BWLIMIT`, `CACHE_BACKUP_BWLIMIT`: rsync `--bwlimit` in KiB/s (default unlimited).
 - `CACHE_RESTORE_MAX_BYTES`: stop the restore after this many bytes of the newest entries (default: whole archive).
 - `CACHE_RESTORE_BATCH`, `CACHE_BACKUP_BATCH`: entries per rsync invocation (default 5000).

@@ -120,8 +120,25 @@ mkdir -p /var/run/nginx "$CACHE_LOCAL_DIR/owlery"
 chown nginx:nginx /var/run/nginx "$CACHE_LOCAL_DIR" "$CACHE_LOCAL_DIR/owlery" 2>/dev/null || true
 
 /usr/local/bin/health-monitor.sh &
-# Warm the local cache from the archive in the background; nginx serves
-# whatever has landed and treats the rest as ordinary misses meanwhile.
-/usr/local/bin/cache-restore.sh &
+
+# CACHE_RESTORE_MODE=blocking (default): copy the archive into the local
+# cache BEFORE nginx starts, so the instance only answers once it is fully
+# warm. Nothing listens on port 80 meanwhile, so the orchestrator's health
+# check must allow for the restore time (Rancher: raise the service's
+# "initializing timeout", or rely on the load balancer's check instead).
+# CACHE_RESTORE_MODE=background: start nginx immediately and warm the cache
+# concurrently; nginx serves whatever has landed and treats the rest as
+# ordinary misses. Use this when there is no redundant instance to cover.
+export CACHE_RESTORE_MODE="${CACHE_RESTORE_MODE:-blocking}"
+case "$(printf '%s' "$CACHE_RESTORE_MODE" | tr '[:upper:]' '[:lower:]')" in
+    background|async)
+        echo "Cache restore runs in the background (CACHE_RESTORE_MODE=$CACHE_RESTORE_MODE)"
+        /usr/local/bin/cache-restore.sh &
+        ;;
+    *)
+        echo "Cache restore runs before nginx starts (CACHE_RESTORE_MODE=$CACHE_RESTORE_MODE); port 80 stays closed until it finishes"
+        /usr/local/bin/cache-restore.sh || echo "cache-restore.sh exited with status $?; starting nginx anyway"
+        ;;
+esac
 start_backup_scheduler
 exec nginx -g 'daemon off;'
