@@ -55,6 +55,19 @@ upstream_healthy=false
 last_upstream_state=
 last_health_log_epoch=0
 
+CACHE_RESTORE_STATE=${CACHE_RESTORE_STATE:-$STATUS_DIR/cache-restore.json}
+CACHE_BACKUP_STATE=${CACHE_BACKUP_STATE:-$STATUS_DIR/cache-backup.json}
+
+# Embed a state file written by cache-restore.sh / cache-backup.sh, or null
+# when that job has not run in this container yet.
+json_state_or_null() {
+    if [ -s "$1" ]; then
+        sed 's/^/    /' "$1"
+    else
+        printf 'null'
+    fi
+}
+
 json_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
@@ -368,6 +381,10 @@ write_status_file() {
     "reading": $(json_number_or_null "$reading_connections"),
     "writing": $(json_number_or_null "$writing_connections"),
     "waiting": $(json_number_or_null "$waiting_connections")
+  },
+  "archive": {
+    "restore": $(json_state_or_null "$CACHE_RESTORE_STATE"),
+    "backup": $(json_state_or_null "$CACHE_BACKUP_STATE")
   }
 }
 EOF

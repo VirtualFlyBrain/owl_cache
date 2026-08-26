@@ -32,13 +32,16 @@ services:
       - "80:80"
       - "8080:8080"
     volumes:
-      - /cache:/var/cache/nginx
+      - /data/owl-cache:/var/cache/nginx   # local node disk: what NGINX serves from
+      - /cache:/cache                      # shared NFS archive: restored from at start, backed up into daily
       - /logs:/logs
     environment:
       - UPSTREAM_SERVER=owl:8080  # For production with owl service
-      - CACHE_MAX_SIZE=1t         # 1TB cache size for high-traffic deployments
+      - CACHE_MAX_SIZE=1t         # bound on the LOCAL cache; size it to the node disk
       - DNS_RESOLVER=169.254.169.250  # Rancher internal DNS (check /etc/resolv.conf)
 ```
+
+See [Cache archive](#cache-archive) for why the cache is split across two volumes.
 
 ### Health Check
 
@@ -99,7 +102,7 @@ Example response:
 - `HEALTH_LOG_INTERVAL`: Seconds between periodic upstream health log lines when state is unchanged (default: `300`)
 - `AUTO_BLOCK_SCANNERS`: Automatically append probe-source IPs from `/logs/hacks/probes.log` to `/logs/blocked.txt` and live-reload NGINX maps (default: `true`)
 - `FORCE_CACHE_REFRESH_ON_REQUEST`: When `true`, each incoming request bypasses the cache and fetches fresh content from upstream, updating the cache on demand instead of serving cached entries.
-- `WORKER_PROCESSES`: Number of NGINX worker processes (default: `auto`). `auto` spawns one worker per host CPU core, but it reads the host's online core count and **ignores the container's cgroup CPU quota** — on a shared/Rancher host pin this to the CPU reservation (e.g. `2`) so you don't over-spawn workers that can't run in parallel. A single container with a coherent local cache is the only safe way to share one cache directory across workers; do not point multiple containers at the same cache volume.
+- `WORKER_PROCESSES`: Number of NGINX worker processes (default: `auto`). `auto` spawns one worker per host CPU core, but it reads the host's online core count and **ignores the container's cgroup CPU quota** — on a shared/Rancher host pin this to the CPU reservation (e.g. `2`) so you don't over-spawn workers that can't run in parallel. A single container with a coherent local cache is the only safe way to share one cache directory across workers; do not point multiple containers at the same `/var/cache/nginx` volume — share the archive at `/cache` instead (see [Cache archive](#cache-archive)).
 - `WORKER_CONNECTIONS`: Max simultaneous connections per worker (default: `4096`). Effective client concurrency is roughly `WORKER_PROCESSES × WORKER_CONNECTIONS`, halved on cache MISS since each client connection also opens an upstream connection.
 - `WORKER_RLIMIT_NOFILE`: Per-worker open-file-descriptor ceiling (default: `65535`). Each client connection plus every open cached file uses a descriptor, so the OS default of 1024 throttles a busy cache. Must stay within the container's hard `nofile` ulimit — NGINX logs a warning and caps to the runtime limit if this is higher.
 
@@ -157,6 +160,75 @@ The proxy adds helpful headers to responses:
 - `X-Cache-Status`: `HIT`, `MISS`, `EXPIRED`, `STALE`, `UPDATING`, or `REVALIDATED`
 - `X-Cache-Key`: The cache key used for the request
 
+### Cache archive
+
+NGINX serves the cache from `/var/cache/nginx` on local node disk. Serving
+directly from an NFS volume costs an `open()`/`stat()` round trip per hit and
+a metadata walk over millions of entries for the cache manager, and NGINX
+cannot share one cache directory between instances anyway (the index lives in
+each instance's shared memory). The shared NFS volume mounted at `/cache`
+is therefore an **archive**, not the live cache: every instance restores from
+it at start and backs up into it on a schedule.
+
+Both directions follow one rule. NGINX names each entry by the MD5 of its
+cache key and replaces entries atomically, so the union of several instances'
+caches is itself a valid cache. Files are only ever copied with
+`rsync --update` (skip when the destination is newer) and nothing is ever
+deleted, so the archive is the union of everything any instance has cached,
+with the newest version of each entry winning. The comparison is by mtime,
+so the nodes and the NAS must agree on time (NTP); `--modify-window=2`
+absorbs filesystem timestamp granularity, not clock skew.
+
+**Restore** (`cache-restore.sh`, started by the entrypoint in the background)
+walks the archive once, sorts entries newest first, and copies them in
+batches while NGINX is already serving. NGINX serves a cache file that
+appears on disk after it has started (verified against 1.26: a lookup that
+misses the in-memory index still opens and validates the file), so startup
+never waits for the copy. Requests whose entry has not landed yet are
+ordinary misses. Progress is reported under `archive.restore` in `/status`.
+A restore of ~1 TB / millions of files takes hours; an instance is fully
+warm when `archive.restore.state` is `done`. If the local volume persists
+across restarts, the `.restored` marker makes later starts skip the restore
+(`CACHE_RESTORE=always` forces it; `off` disables it).
+
+**Backup** (`cache-backup.sh`) lists entries written since the previous run
+from the local disk (`find -newer`; the NFS side is never walked) and copies
+them into the archive. `crond` inside the container runs it daily at
+`CACHE_BACKUP_TIME` (or weekly on `CACHE_BACKUP_WEEKDAY`). When a service is
+scaled to several containers they all share one environment, so each adds a
+deterministic per-host offset of up to `CACHE_BACKUP_JITTER_MINUTES` to spread
+the NAS load; a `mkdir`-based lock on the archive serialises any that still
+overlap (a lock older than `CACHE_LOCK_STALE_MINUTES` is treated as
+abandoned). Run it by hand at any time:
+
+```bash
+docker exec owlery-cache cache-backup.sh          # entries new since the last run
+docker exec owlery-cache cache-backup.sh --full   # consider every local entry
+docker exec owlery-cache cache-restore.sh --force # re-pull the archive now
+curl -s http://localhost/status | jq .archive     # progress of both
+```
+
+Loss window: a container that dies loses whatever it cached since its last
+backup (at most one day on the default schedule); everything older is in the
+archive and comes back on the next restore.
+
+Warm-up note: the `X-Force-Refresh` warm-up tool only refreshes the instance
+that the load balancer routes it to. With several instances, warm one, run
+`cache-backup.sh` on it, then let the others pick the entries up on their
+next restore (or point the warm-up at each instance in turn).
+
+Variables (all optional):
+
+- `CACHE_ARCHIVE_DIR` (`/cache`), `CACHE_LOCAL_DIR` (`/var/cache/nginx`): the two roots; both hold an `owlery/` tree.
+- `CACHE_RESTORE`: `auto` (default; skip if `.restored` exists), `always`, `off`.
+- `CACHE_RESTORE_BWLIMIT`, `CACHE_BACKUP_BWLIMIT`: rsync `--bwlimit` in KiB/s (default unlimited).
+- `CACHE_RESTORE_MAX_BYTES`: stop the restore after this many bytes of the newest entries (default: whole archive).
+- `CACHE_RESTORE_BATCH`, `CACHE_BACKUP_BATCH`: entries per rsync invocation (default 5000).
+- `CACHE_BACKUP_SCHEDULE`: `daily` (default), `weekly`, `off`.
+- `CACHE_BACKUP_TIME` (`03:00`, container local time), `CACHE_BACKUP_WEEKDAY` (`0` = Sunday).
+- `CACHE_BACKUP_JITTER_MINUTES` (`120`); `CACHE_BACKUP_CRON`: a verbatim 5-field crontab spec that overrides the above and gets no jitter.
+- `CACHE_BACKUP_LOCK_WAIT` (`120` min), `CACHE_LOCK_STALE_MINUTES` (`360`).
+
 ### Selective 404 cache eviction
 
 404 responses are not cached going forward, but a long-lived cache may still
@@ -175,7 +247,9 @@ The script identifies entries by matching the response status line
 happens to contain the text "HTTP/1.1 404" elsewhere in the body are not
 affected. Files removed from disk are simply treated as `MISS` on the next
 request — no nginx reload required. The cache directory is taken from
-`$CACHE_DIR` (default `/var/cache/nginx/owlery`).
+`$CACHE_DIR` (default `/var/cache/nginx/owlery`). Add `--archive` to walk the
+shared archive as well; without it the next restore brings the purged entries
+back.
 
 ## Performance
 
@@ -224,9 +298,9 @@ request — no nginx reload required. The cache directory is taken from
 # Pull image
 docker pull virtualflybrain/owl_cache:latest
 
-# Create cache directory
-mkdir -p /cache
-chown -R 101:101 /cache
+# Local cache on node disk, and the shared archive (NFS) it syncs with
+mkdir -p /data/owl-cache /cache
+chown -R 101:101 /data/owl-cache /cache
 
 # Create persistent logs + blocklist file
 mkdir -p /logs/hacks
@@ -245,6 +319,7 @@ curl -I http://localhost/health
 - `Dockerfile`: Image build instructions
 - `nginx.conf.template`: NGINX configuration template
 - `docker-compose.yml`: Example deployment configuration
+- `cache-lib.sh`, `cache-restore.sh`, `cache-backup.sh`: archive ↔ local cache sync (see [Cache archive](#cache-archive)); `test/cache-sync-test.sh` runs at image build
 - `.github/workflows/docker.yml`: GitHub Actions CI/CD pipeline
 
 ## CI/CD
