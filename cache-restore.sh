@@ -129,23 +129,43 @@ awk -v n="$CACHE_RESTORE_BATCH" -v dir="$work" '{
     if (NR % n == 0) close(f)
 }' "$work/entries.lst"
 
+# rsync partials go here, outside the tree nginx's cache loader walks.
+TMPDIR_RSYNC="$CACHE_LOCAL_DIR/.rsync-tmp"
+retry=""
 for batch in "$work"/batch.*; do
     [ -f "$batch" ] || continue
     cut -d' ' -f2- "$batch" > "$batch.paths"
     n="$(wc -l < "$batch" | tr -d ' ')"
-    if ! cache_rsync_batch "$SRC" "$DST" "$batch.paths" "$CACHE_RESTORE_BWLIMIT"; then
+    if ! cache_rsync_batch "$SRC" "$DST" "$batch.paths" "$CACHE_RESTORE_BWLIMIT" "$TMPDIR_RSYNC"; then
         # Entries evicted from the archive between listing and copy show up as
         # vanished files (rsync exit 24); anything else is worth surfacing but
-        # must not abandon the remaining batches.
-        cache_log "restore: rsync reported errors on batch $(basename "$batch"); continuing"
+        # must not abandon the remaining batches. Failed batches get one more
+        # pass at the end (--update makes the repeat cheap).
+        cache_log "restore: rsync reported errors on batch $(basename "$batch"); will retry once"
+        retry="$retry $batch.paths"
+    else
+        rm -f "$batch.paths"
     fi
     files_done=$(( files_done + n ))
     # Bytes are accounted from the listing, not from rsync, so this is the
     # size of the entries considered so far (already-current files included).
     bytes_done=$(( bytes_done + $(awk '{ s += $1 } END { print s + 0 }' "$batch") ))
-    rm -f "$batch" "$batch.paths"
+    rm -f "$batch"
     cache_write_state "$STATE_FILE" running "$files_done" "$bytes_done" "$started" "" "$files_done/$total_files files"
 done
 
+failed=0
+for paths in $retry; do
+    cache_write_state "$STATE_FILE" running "$files_done" "$bytes_done" "$started" "" "retrying $(basename "$paths" .paths)"
+    if ! cache_rsync_batch "$SRC" "$DST" "$paths" "$CACHE_RESTORE_BWLIMIT" "$TMPDIR_RSYNC"; then
+        failed=$(( failed + 1 ))
+        cache_log "restore: batch $(basename "$paths" .paths) still reported errors on retry"
+    fi
+done
+
 printf '%s %s files\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$files_done" > "$MARKER"
-finish "done" "$files_done/$total_files entries synchronised from $SRC"
+if [ "$failed" -gt 0 ]; then
+    finish "done" "$files_done/$total_files entries synchronised from $SRC ($failed batches reported errors after retry; run cache-restore.sh --force to repeat)"
+else
+    finish "done" "$files_done/$total_files entries synchronised from $SRC"
+fi

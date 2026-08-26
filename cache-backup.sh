@@ -116,7 +116,7 @@ for batch in "$work"/batch.*; do
     [ -f "$batch" ] || continue
     cut -d' ' -f2- "$batch" > "$batch.paths"
     n="$(wc -l < "$batch" | tr -d ' ')"
-    if ! cache_rsync_batch "$SRC" "$DST" "$batch.paths" "$CACHE_BACKUP_BWLIMIT"; then
+    if ! cache_rsync_batch "$SRC" "$DST" "$batch.paths" "$CACHE_BACKUP_BWLIMIT" "$CACHE_ARCHIVE_DIR/.rsync-tmp"; then
         # Exit 24 (vanished source file) is normal: the cache manager evicts
         # entries under max_size while we run. Anything else is counted.
         errors=$(( errors + 1 ))
