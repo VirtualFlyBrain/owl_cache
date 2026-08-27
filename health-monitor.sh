@@ -57,6 +57,7 @@ last_health_log_epoch=0
 
 CACHE_RESTORE_STATE=${CACHE_RESTORE_STATE:-$STATUS_DIR/cache-restore.json}
 CACHE_BACKUP_STATE=${CACHE_BACKUP_STATE:-$STATUS_DIR/cache-backup.json}
+HEALTH_MONITOR_PID_FILE=${HEALTH_MONITOR_PID_FILE:-$STATUS_DIR/health-monitor.pid}
 
 # Embed a state file written by cache-restore.sh / cache-backup.sh, or null
 # when that job has not run in this container yet.
@@ -396,6 +397,12 @@ EOF
 mkdir -p "$STATUS_DIR" "$ACCESS_LOG_DIR"
 prepare_security_paths
 umask 022
+
+# cache-restore.sh / cache-backup.sh signal this PID (cache_signal_status_refresh
+# in cache-lib.sh) so a state change lands in /status immediately rather than
+# waiting for the next STATUS_POLL_INTERVAL tick -- see cache-lib.sh for why.
+echo $$ > "$HEALTH_MONITOR_PID_FILE"
+trap 'write_status_file' USR1
 
 probe_log_size=$(get_file_size "$PROBE_LOG")
 last_blocklist_signature=$(get_file_signature "$BLOCKLIST_SOURCE")

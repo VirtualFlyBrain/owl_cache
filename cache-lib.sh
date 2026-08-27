@@ -23,6 +23,27 @@ CACHE_MODIFY_WINDOW="${CACHE_MODIFY_WINDOW:-2}"
 # backups. flock(2) is unreliable on NFS; mkdir(2) is atomic there.
 CACHE_LOCK_DIR="${CACHE_LOCK_DIR:-$CACHE_ARCHIVE_DIR/.owl-cache-backup.lock}"
 CACHE_LOCK_STALE_MINUTES="${CACHE_LOCK_STALE_MINUTES:-360}"
+# PID file written by health-monitor.sh at startup. /status is a snapshot
+# health-monitor.sh writes on its own poll cycle (default every 5s), so a
+# restore/backup that finishes between polls can sit "stale" in /status for
+# up to that long -- harmless for a real multi-hour restore, but on a small
+# or empty archive the whole run can complete inside one poll gap, which is
+# exactly what made a CI check race against it. cache_signal_status_refresh
+# asks health-monitor.sh to re-embed the state files immediately instead of
+# waiting for the next tick; it is a silent no-op when health-monitor.sh
+# is not running (standalone script runs, unit tests).
+CACHE_HEALTH_MONITOR_PID_FILE="${CACHE_HEALTH_MONITOR_PID_FILE:-$CACHE_STATE_DIR/health-monitor.pid}"
+cache_signal_status_refresh() {
+    [ -f "$CACHE_HEALTH_MONITOR_PID_FILE" ] || return 0
+    pid="$(cat "$CACHE_HEALTH_MONITOR_PID_FILE" 2>/dev/null)"
+    # `kill` on a dead/stale pid exits non-zero: under the callers' `set -e`,
+    # a bare `&&`-chained failure here would abort cache-restore.sh/
+    # cache-backup.sh entirely instead of no-op'ing, so it must be guarded.
+    if [ -n "${pid:-}" ]; then
+        kill -USR1 "$pid" 2>/dev/null || true
+    fi
+    return 0
+}
 
 cache_log() {
     printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*"
