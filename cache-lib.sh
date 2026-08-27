@@ -164,7 +164,14 @@ cache_rsync_batch() {
     src="$1"; dst="$2"; list="$3"; bwlimit="${4:-0}"; tmpdir="${5:-}"
     # --files-from implies --relative, so `a/bc/<hash>` lands at the same
     # levels path under <dst> and the intermediate directories are created.
-    set -- -a --whole-file --update --modify-window="$CACHE_MODIFY_WINDOW" \
+    # Not -a: no -o/-g/-p and no directory times. The archive is NFS, the
+    # copying user (nginx) does not own the directories another instance or
+    # the initial seed created there, and chown/chgrp/chmod/utimes on them
+    # fail with EPERM (exit 23) on every run. Ownership and mode on the
+    # destination are irrelevant: rsync creates each file as the copying user
+    # and nginx only ever reads its own local copy. File mtimes (-t) are kept
+    # because --update and the backup's find -newer rely on them.
+    set -- -rltD --omit-dir-times --whole-file --update --modify-window="$CACHE_MODIFY_WINDOW" \
         --files-from="$list" --quiet
     if [ -n "$tmpdir" ]; then
         mkdir -p "$tmpdir"
