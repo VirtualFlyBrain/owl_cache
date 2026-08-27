@@ -23,33 +23,28 @@ CACHE_MODIFY_WINDOW="${CACHE_MODIFY_WINDOW:-2}"
 # backups. flock(2) is unreliable on NFS; mkdir(2) is atomic there.
 CACHE_LOCK_DIR="${CACHE_LOCK_DIR:-$CACHE_ARCHIVE_DIR/.owl-cache-backup.lock}"
 CACHE_LOCK_STALE_MINUTES="${CACHE_LOCK_STALE_MINUTES:-360}"
-# PID file written by health-monitor.sh at startup. /status is a snapshot
-# health-monitor.sh writes on its own poll cycle (default every 5s), so a
-# restore/backup that finishes between polls can sit "stale" in /status for
-# up to that long -- harmless for a real multi-hour restore, but on a small
-# or empty archive the whole run can complete inside one poll gap, which is
-# exactly what made a CI check race against it. cache_signal_status_refresh
-# asks health-monitor.sh to re-embed the state files immediately instead of
-# waiting for the next tick; it is a silent no-op when health-monitor.sh is
-# not running (standalone script runs, unit tests).
+# /status is a snapshot health-monitor.sh writes on its own poll cycle
+# (default every 5s), so a restore/backup that finishes between polls can sit
+# "stale" in /status for up to that long -- harmless for a real multi-hour
+# restore, but on a small or empty archive the whole run can complete inside
+# one poll gap, which is what made a CI startup check race against it.
 #
-# health-monitor.sh always runs as root. cache-restore.sh/cache-backup.sh
-# drop to the nginx user (su-exec) before doing anything else, and a
-# non-root process may not signal a root-owned one -- calling this from
-# inside either script would silently do nothing. So it is only ever called
-# from a root context: docker-entrypoint.sh (after cache-restore.sh returns)
-# and the crontab line start_backup_scheduler installs (after cache-backup.sh
-# returns, in the same crond-invoked root shell).
-CACHE_HEALTH_MONITOR_PID_FILE="${CACHE_HEALTH_MONITOR_PID_FILE:-$CACHE_STATE_DIR/health-monitor.pid}"
+# cache_signal_status_refresh drops a flag file that health-monitor.sh checks
+# on a short tick (see its main loop) so a state change is reflected within
+# about a second instead of waiting for the next full poll. A first version
+# of this used `kill -USR1` at a pid health-monitor.sh recorded, woken by a
+# `trap ... USR1`; that does not work; in ash/dash a pending trap is not run
+# until the current `sleep` returns on its own, so the signal sat queued for
+# the rest of the poll interval anyway -- no better than doing nothing. A
+# plain file check on a 1s tick has no such gotcha, and, unlike the signal
+# (which needs sender and receiver to share a UID), works regardless of which
+# user creates it: nginx (cache-restore.sh/cache-backup.sh, after su-exec) can
+# always write into CACHE_STATE_DIR, since docker-entrypoint.sh chowns it to
+# nginx before either script ever runs.
+CACHE_STATUS_DIRTY_FILE="${CACHE_STATUS_DIRTY_FILE:-$CACHE_STATE_DIR/.status-dirty}"
 cache_signal_status_refresh() {
-    [ -f "$CACHE_HEALTH_MONITOR_PID_FILE" ] || return 0
-    pid="$(cat "$CACHE_HEALTH_MONITOR_PID_FILE" 2>/dev/null)"
-    # `kill` on a dead/stale pid exits non-zero: under the callers' `set -e`,
-    # a bare `&&`-chained failure here would abort cache-restore.sh/
-    # cache-backup.sh entirely instead of no-op'ing, so it must be guarded.
-    if [ -n "${pid:-}" ]; then
-        kill -USR1 "$pid" 2>/dev/null || true
-    fi
+    mkdir -p "$CACHE_STATE_DIR" 2>/dev/null || true
+    : > "$CACHE_STATUS_DIRTY_FILE" 2>/dev/null || true
     return 0
 }
 

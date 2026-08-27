@@ -63,23 +63,18 @@ assert_eq "zero span gives zero" "$(cache_jitter_minutes 0)" "0"
 assert_eq "garbage span gives zero" "$(cache_jitter_minutes abc)" "0"
 
 echo "cache_signal_status_refresh"
-assert_eq "no-op when health-monitor is not running" "$(cache_signal_status_refresh; echo $?)" "0"
-marker="$WORK/signalled"
-rm -f "$marker"
-( trap 'touch "'"$marker"'"' USR1; while [ ! -f "$marker" ]; do sleep 0.1; done ) &
-listener_pid=$!
-mkdir -p "$CACHE_STATE_DIR"
-printf '%s' "$listener_pid" > "$CACHE_STATE_DIR/health-monitor.pid"
-cache_signal_status_refresh
-i=0
-while [ ! -f "$marker" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-assert_file "signals the pid recorded in the pidfile" "$marker"
-wait "$listener_pid" 2>/dev/null || true
-rm -f "$marker"
-# listener_pid has now exited: a pidfile left pointing at it is a dead pid.
-printf '%s' "$listener_pid" > "$CACHE_STATE_DIR/health-monitor.pid"
-assert_eq "dead pid in the pidfile is a silent no-op" "$(cache_signal_status_refresh; echo $?)" "0"
-rm -f "$CACHE_STATE_DIR/health-monitor.pid"
+# A first version of this used `kill -USR1` at a pid health-monitor.sh
+# recorded, woken by `trap ... USR1` in its main loop. That does not work: in
+# ash/dash a pending trap is not run until the current `sleep` call returns
+# on its own, so the signal just sat queued for the rest of the poll
+# interval -- no better than not sending it (confirmed against production:
+# CI stayed red with the identical stale snapshot after that fix "landed").
+# Replaced with a flag file health-monitor.sh polls on a 1s tick, which has
+# no such gotcha and works regardless of which user creates it.
+rm -rf "$CACHE_STATE_DIR"
+assert_eq "always succeeds, even before CACHE_STATE_DIR exists" "$(cache_signal_status_refresh; echo $?)" "0"
+assert_file "creates CACHE_STATE_DIR and the dirty file" "$CACHE_STATE_DIR/.status-dirty"
+rm -f "$CACHE_STATE_DIR/.status-dirty"
 
 echo "cache_backup_cron_spec"
 spec="$(CACHE_BACKUP_SCHEDULE=daily CACHE_BACKUP_TIME=03:00 CACHE_BACKUP_JITTER_MINUTES=0 cache_backup_cron_spec)"
