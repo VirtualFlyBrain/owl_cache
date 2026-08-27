@@ -28,6 +28,15 @@ cache_log() {
     printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*"
 }
 
+# "2g", "500m", "10k", "123" -> bytes. Anything unparseable -> 0.
+cache_parse_size() {
+    printf '%s' "${1:-0}" | awk '{
+        v = tolower($0); n = v + 0
+        if (v ~ /k$/) n *= 1024; else if (v ~ /m$/) n *= 1048576
+        else if (v ~ /g$/) n *= 1073741824; else if (v ~ /t$/) n *= 1099511627776
+        printf "%.0f", n }'
+}
+
 cache_json_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }

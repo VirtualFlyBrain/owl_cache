@@ -186,7 +186,12 @@ instance only answers requests once its cache is fully warm; port 80 stays
 closed meanwhile, so give the orchestrator's health check enough time (on
 Rancher, raise the service's *initializing timeout* or rely on the load
 balancer's check) and keep a second instance serving. A restore of ~1 TB /
-millions of files takes hours. With `CACHE_RESTORE_MODE=background` NGINX
+millions of files takes hours (at ~90 files/s per worker; see
+`CACHE_RESTORE_JOBS`). `CACHE_RESTORE_MODE=hybrid` bounds the wait: NGINX
+starts as soon as the newest `CACHE_RESTORE_BLOCKING_MAX_BYTES` (default
+2 GB) have landed and the remainder continues in the background, so the
+health-check window stays valid however large the archive grows. With
+`CACHE_RESTORE_MODE=background` NGINX
 starts immediately and the copy runs alongside it: NGINX serves a cache file
 that appears on disk after it has started (verified against 1.26), and
 requests whose entry has not landed yet are ordinary misses. Either way,
@@ -228,7 +233,8 @@ Variables (all optional):
 
 - `CACHE_ARCHIVE_DIR` (`/cache`), `CACHE_LOCAL_DIR` (`/var/cache/nginx`): the two roots; both hold an `owlery/` tree.
 - `CACHE_RESTORE`: `auto` (default; skip if `.restored` exists), `always`, `off`.
-- `CACHE_RESTORE_MODE`: `blocking` (default; restore, then start NGINX) or `background` (start NGINX, restore alongside).
+- `CACHE_RESTORE_MODE`: `blocking` (default; restore everything, then start NGINX), `hybrid` (start NGINX once the newest `CACHE_RESTORE_BLOCKING_MAX_BYTES`, default `2g`, have landed; the rest continues in the background) or `background` (start NGINX immediately).
+- `CACHE_RESTORE_JOBS`: concurrent rsync workers for the restore (default `8`). Copy time is per-file NFS latency, not bandwidth (~90 files/s per worker measured), so workers scale almost linearly. The archive listing is also walked in parallel, one `find` per top-level directory.
 - `CACHE_RESTORE_BWLIMIT`, `CACHE_BACKUP_BWLIMIT`: rsync `--bwlimit` in KiB/s (default unlimited).
 - `CACHE_RESTORE_MAX_BYTES`: stop the restore after this many bytes of the newest entries (default: whole archive).
 - `CACHE_RESTORE_BATCH`, `CACHE_BACKUP_BATCH`: entries per rsync invocation (default 5000).

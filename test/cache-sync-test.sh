@@ -23,6 +23,8 @@ export CACHE_LOCK_DIR="$WORK/archive/.lock"
 export CACHE_RESTORE_BATCH=2
 export CACHE_BACKUP_BATCH=2
 export CACHE_BACKUP_LOCK_WAIT=0
+export CACHE_RESTORE_JOBS=3
+export CACHE_RUN_AS=
 ARCHIVE="$CACHE_ARCHIVE_DIR/owlery"
 LOCAL="$CACHE_LOCAL_DIR/owlery"
 
@@ -115,6 +117,15 @@ CACHE_RESTORE_MAX_BYTES=$(( $(stat -c %s "$ARCHIVE/0/00/$(h 5)") + $(stat -c %s 
 assert_file "bounded restore takes newest (5)" "$LOCAL/0/00/$(h 5)"
 assert_file "bounded restore takes next newest (4)" "$LOCAL/0/00/$(h 4)"
 assert_no_file "bounded restore stops before older entries (2)" "$LOCAL/0/00/$(h 2)"
+
+grep -q "newest" "$CACHE_STATE_DIR/cache-restore.ready" && fail "ready file should not claim a partial restore when unbounded" || ok "unbounded restore is ready only at the end"
+
+rm -rf "$LOCAL" "$CACHE_LOCAL_DIR/.restored"
+CACHE_RESTORE_JOBS=1 CACHE_RESTORE_BLOCKING_MAX_BYTES=1 sh "$CACHE_RESTORE_SCRIPT" > "$WORK/restore5.log" 2>&1
+grep -q "restore: ready -- newest" "$WORK/restore5.log" && ok "hybrid: ready after the first batch" || fail "hybrid ready: $(cat "$WORK/restore5.log")"
+assert_file "hybrid: ready file written" "$CACHE_STATE_DIR/cache-restore.ready"
+assert_file "hybrid: restore still completes (oldest entry 1)" "$LOCAL/0/00/$(h 1)"
+assert_eq "size suffix parsing" "$(cache_parse_size 2g) $(cache_parse_size 500m) $(cache_parse_size 7) $(cache_parse_size junk)" "2147483648 524288000 7 0"
 
 CACHE_RESTORE=off sh "$CACHE_RESTORE_SCRIPT" > /dev/null 2>&1
 assert_eq "CACHE_RESTORE=off skips" "$(sed -n 's/.*"state": "\([a-z]*\)".*/\1/p' "$CACHE_STATE_DIR/cache-restore.json")" "skipped"
