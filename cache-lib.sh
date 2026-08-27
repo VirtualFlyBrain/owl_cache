@@ -23,9 +23,42 @@ CACHE_MODIFY_WINDOW="${CACHE_MODIFY_WINDOW:-2}"
 # backups. flock(2) is unreliable on NFS; mkdir(2) is atomic there.
 CACHE_LOCK_DIR="${CACHE_LOCK_DIR:-$CACHE_ARCHIVE_DIR/.owl-cache-backup.lock}"
 CACHE_LOCK_STALE_MINUTES="${CACHE_LOCK_STALE_MINUTES:-360}"
+# /status is a snapshot health-monitor.sh writes on its own poll cycle
+# (default every 5s), so a restore/backup that finishes between polls can sit
+# "stale" in /status for up to that long -- harmless for a real multi-hour
+# restore, but on a small or empty archive the whole run can complete inside
+# one poll gap, which is what made a CI startup check race against it.
+#
+# cache_signal_status_refresh drops a flag file that health-monitor.sh checks
+# on a short tick (see its main loop) so a state change is reflected within
+# about a second instead of waiting for the next full poll. A first version
+# of this used `kill -USR1` at a pid health-monitor.sh recorded, woken by a
+# `trap ... USR1`; that does not work; in ash/dash a pending trap is not run
+# until the current `sleep` returns on its own, so the signal sat queued for
+# the rest of the poll interval anyway -- no better than doing nothing. A
+# plain file check on a 1s tick has no such gotcha, and, unlike the signal
+# (which needs sender and receiver to share a UID), works regardless of which
+# user creates it: nginx (cache-restore.sh/cache-backup.sh, after su-exec) can
+# always write into CACHE_STATE_DIR, since docker-entrypoint.sh chowns it to
+# nginx before either script ever runs.
+CACHE_STATUS_DIRTY_FILE="${CACHE_STATUS_DIRTY_FILE:-$CACHE_STATE_DIR/.status-dirty}"
+cache_signal_status_refresh() {
+    mkdir -p "$CACHE_STATE_DIR" 2>/dev/null || true
+    : > "$CACHE_STATUS_DIRTY_FILE" 2>/dev/null || true
+    return 0
+}
 
 cache_log() {
     printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*"
+}
+
+# "2g", "500m", "10k", "123" -> bytes. Anything unparseable -> 0.
+cache_parse_size() {
+    printf '%s' "${1:-0}" | awk '{
+        v = tolower($0); n = v + 0
+        if (v ~ /k$/) n *= 1024; else if (v ~ /m$/) n *= 1048576
+        else if (v ~ /g$/) n *= 1073741824; else if (v ~ /t$/) n *= 1099511627776
+        printf "%.0f", n }'
 }
 
 cache_json_escape() {

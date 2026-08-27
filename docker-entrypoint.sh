@@ -121,21 +121,35 @@ chown nginx:nginx /var/run/nginx "$CACHE_LOCAL_DIR" "$CACHE_LOCAL_DIR/owlery" 2>
 
 /usr/local/bin/health-monitor.sh &
 
-# CACHE_RESTORE_MODE=blocking (default): copy the archive into the local
-# cache BEFORE nginx starts, so the instance only answers once it is fully
-# warm. Nothing listens on port 80 meanwhile, so the orchestrator's health
-# check must allow for the restore time (Rancher: raise the service's
-# "initializing timeout", or rely on the load balancer's check instead).
-# CACHE_RESTORE_MODE=background: start nginx immediately and warm the cache
-# concurrently; nginx serves whatever has landed and treats the rest as
-# ordinary misses. Use this when there is no redundant instance to cover.
+# CACHE_RESTORE_MODE decides when nginx starts relative to the restore:
+#   blocking   (default) wait until the whole archive has been copied, so the
+#              instance only answers once fully warm. Port 80 stays closed
+#              meanwhile, so the orchestrator's health check must allow for
+#              the restore time (Rancher: raise the service's "initializing
+#              timeout"); keep a second instance serving.
+#   hybrid     wait only until the newest CACHE_RESTORE_BLOCKING_MAX_BYTES
+#              (default 2g) have landed, then start nginx while the rest of the
+#              restore continues in the background. Bounded start time
+#              whatever the archive size.
+#   background start nginx immediately; nginx serves whatever has landed and
+#              treats the rest as ordinary misses.
 export CACHE_RESTORE_MODE="${CACHE_RESTORE_MODE:-blocking}"
+READY_FILE="${CACHE_STATE_DIR:-/var/run/nginx}/cache-restore.ready"
+rm -f "$READY_FILE"
 case "$(printf '%s' "$CACHE_RESTORE_MODE" | tr '[:upper:]' '[:lower:]')" in
     background|async)
         echo "Cache restore runs in the background (CACHE_RESTORE_MODE=$CACHE_RESTORE_MODE)"
         /usr/local/bin/cache-restore.sh &
         ;;
+    hybrid)
+        export CACHE_RESTORE_BLOCKING_MAX_BYTES="${CACHE_RESTORE_BLOCKING_MAX_BYTES:-2g}"
+        echo "Cache restore: nginx starts once the newest $CACHE_RESTORE_BLOCKING_MAX_BYTES have landed (CACHE_RESTORE_MODE=hybrid); the rest continues in the background"
+        /usr/local/bin/cache-restore.sh &
+        restore_pid=$!
+        while [ ! -f "$READY_FILE" ] && kill -0 "$restore_pid" 2>/dev/null; do sleep 2; done
+        ;;
     *)
+        export CACHE_RESTORE_BLOCKING_MAX_BYTES=0
         echo "Cache restore runs before nginx starts (CACHE_RESTORE_MODE=$CACHE_RESTORE_MODE); port 80 stays closed until it finishes"
         /usr/local/bin/cache-restore.sh || echo "cache-restore.sh exited with status $?; starting nginx anyway"
         ;;

@@ -23,6 +23,8 @@ export CACHE_LOCK_DIR="$WORK/archive/.lock"
 export CACHE_RESTORE_BATCH=2
 export CACHE_BACKUP_BATCH=2
 export CACHE_BACKUP_LOCK_WAIT=0
+export CACHE_RESTORE_JOBS=3
+export CACHE_RUN_AS=
 ARCHIVE="$CACHE_ARCHIVE_DIR/owlery"
 LOCAL="$CACHE_LOCAL_DIR/owlery"
 
@@ -59,6 +61,20 @@ assert_eq "deterministic for this host" "$j1" "$j2"
 [ "$j1" -ge 0 ] && [ "$j1" -lt 120 ] && ok "within [0,120)" || fail "jitter $j1 out of range"
 assert_eq "zero span gives zero" "$(cache_jitter_minutes 0)" "0"
 assert_eq "garbage span gives zero" "$(cache_jitter_minutes abc)" "0"
+
+echo "cache_signal_status_refresh"
+# A first version of this used `kill -USR1` at a pid health-monitor.sh
+# recorded, woken by `trap ... USR1` in its main loop. That does not work: in
+# ash/dash a pending trap is not run until the current `sleep` call returns
+# on its own, so the signal just sat queued for the rest of the poll
+# interval -- no better than not sending it (confirmed against production:
+# CI stayed red with the identical stale snapshot after that fix "landed").
+# Replaced with a flag file health-monitor.sh polls on a 1s tick, which has
+# no such gotcha and works regardless of which user creates it.
+rm -rf "$CACHE_STATE_DIR"
+assert_eq "always succeeds, even before CACHE_STATE_DIR exists" "$(cache_signal_status_refresh; echo $?)" "0"
+assert_file "creates CACHE_STATE_DIR and the dirty file" "$CACHE_STATE_DIR/.status-dirty"
+rm -f "$CACHE_STATE_DIR/.status-dirty"
 
 echo "cache_backup_cron_spec"
 spec="$(CACHE_BACKUP_SCHEDULE=daily CACHE_BACKUP_TIME=03:00 CACHE_BACKUP_JITTER_MINUTES=0 cache_backup_cron_spec)"
@@ -115,6 +131,15 @@ CACHE_RESTORE_MAX_BYTES=$(( $(stat -c %s "$ARCHIVE/0/00/$(h 5)") + $(stat -c %s 
 assert_file "bounded restore takes newest (5)" "$LOCAL/0/00/$(h 5)"
 assert_file "bounded restore takes next newest (4)" "$LOCAL/0/00/$(h 4)"
 assert_no_file "bounded restore stops before older entries (2)" "$LOCAL/0/00/$(h 2)"
+
+grep -q "newest" "$CACHE_STATE_DIR/cache-restore.ready" && fail "ready file should not claim a partial restore when unbounded" || ok "unbounded restore is ready only at the end"
+
+rm -rf "$LOCAL" "$CACHE_LOCAL_DIR/.restored"
+CACHE_RESTORE_JOBS=1 CACHE_RESTORE_BLOCKING_MAX_BYTES=1 sh "$CACHE_RESTORE_SCRIPT" > "$WORK/restore5.log" 2>&1
+grep -q "restore: ready -- newest" "$WORK/restore5.log" && ok "hybrid: ready after the first batch" || fail "hybrid ready: $(cat "$WORK/restore5.log")"
+assert_file "hybrid: ready file written" "$CACHE_STATE_DIR/cache-restore.ready"
+assert_file "hybrid: restore still completes (oldest entry 1)" "$LOCAL/0/00/$(h 1)"
+assert_eq "size suffix parsing" "$(cache_parse_size 2g) $(cache_parse_size 500m) $(cache_parse_size 7) $(cache_parse_size junk)" "2147483648 524288000 7 0"
 
 CACHE_RESTORE=off sh "$CACHE_RESTORE_SCRIPT" > /dev/null 2>&1
 assert_eq "CACHE_RESTORE=off skips" "$(sed -n 's/.*"state": "\([a-z]*\)".*/\1/p' "$CACHE_STATE_DIR/cache-restore.json")" "skipped"
