@@ -225,8 +225,10 @@ update_progress() {
         fi
     fi
 }
+# Poll every second: cheap (one small state-file write), and a tiny restore
+# should not take longer than its workers do.
 while [ "$(ls "$work"/worker.*.done 2>/dev/null | wc -l | tr -d ' ')" -lt "$CACHE_RESTORE_JOBS" ]; do
-    sleep 5
+    sleep 1
     update_progress
 done
 wait
