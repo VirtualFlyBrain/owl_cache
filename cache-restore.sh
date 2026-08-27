@@ -82,12 +82,10 @@ mark_ready() {
     [ -f "$READY_FILE" ] && return
     printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$1" > "$READY_FILE"
     cache_log "restore: ready -- $1"
-    cache_signal_status_refresh
 }
 finish() {
     cache_write_state "$STATE_FILE" "$1" "${files_done:-0}" "${bytes_done:-0}" "$started" "$(date +%s)" "$2"
     cache_log "restore: $1 -- $2"
-    cache_signal_status_refresh
     # Whatever happened, never leave the entrypoint waiting.
     mark_ready "$1: $2"
 }
@@ -120,7 +118,6 @@ trap 'rm -rf "$work"' EXIT
 files_done=0
 bytes_done=0
 cache_write_state "$STATE_FILE" listing 0 0 "$started" "" "walking archive $SRC"
-cache_signal_status_refresh
 cache_log "restore: listing $SRC (this walks the whole archive once)"
 
 # One walk of the archive: "<mtime> <size> <relative path>", newest first.
@@ -155,7 +152,6 @@ total_files="$(wc -l < "$work/entries.lst" | tr -d ' ')"
 total_bytes="$(awk '{ s += $1 } END { print s + 0 }' "$work/entries.lst")"
 cache_log "restore: $total_files entries ($total_bytes bytes) to consider, newest first, batches of $CACHE_RESTORE_BATCH"
 cache_write_state "$STATE_FILE" running 0 0 "$started" "" "0/$total_files files"
-cache_signal_status_refresh
 
 if [ "$total_files" -eq 0 ]; then
     finish "done" "archive is empty"; printf '%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ") 0 files" > "$MARKER"; exit 0
@@ -220,7 +216,6 @@ update_progress() {
     set -- $(cat "$work"/progress.* 2>/dev/null | awk '{ f += $1; b += $2 } END { print f + 0, b + 0 }')
     files_done="$1"; bytes_done="$2"
     cache_write_state "$STATE_FILE" running "$files_done" "$bytes_done" "$started" "" "$files_done/$total_files files, $CACHE_RESTORE_JOBS workers"
-    cache_signal_status_refresh
     if [ "$ready_after_batch" -ge 0 ] && [ ! -f "$READY_FILE" ]; then
         # Ready once every batch up to ready_after_batch has been processed.
         done_upto="$(cat "$work"/progress.* 2>/dev/null | awk -v want="$ready_after_batch" '
@@ -242,7 +237,6 @@ update_progress
 failed=0
 for paths in $(cat "$work"/failed.* 2>/dev/null); do
     cache_write_state "$STATE_FILE" running "$files_done" "$bytes_done" "$started" "" "retrying $(basename "$paths" .paths)"
-    cache_signal_status_refresh
     if ! cache_rsync_batch "$SRC" "$DST" "$paths" "$CACHE_RESTORE_BWLIMIT" "$TMPDIR_RSYNC"; then
         failed=$(( failed + 1 ))
         cache_log "restore: batch $(basename "$paths" .paths) still reported errors on retry"

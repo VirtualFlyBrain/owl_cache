@@ -98,8 +98,11 @@ start_backup_scheduler() {
     fi
     mkdir -p /etc/crontabs
     # Container stdout is fd 1 of PID 1, so the backup log lands in `docker logs`.
-    # crond runs the job as root; cache-backup.sh drops to nginx itself.
-    printf '%s /usr/local/bin/cache-backup.sh >> /proc/1/fd/1 2>&1\n' "$spec" > /etc/crontabs/root
+    # crond runs the job as root; cache-backup.sh drops to nginx itself, so it
+    # cannot signal health-monitor.sh on completion (a non-root process may not
+    # signal a root-owned one) -- the refresh below runs back in crond's own
+    # root shell instead, in the same crontab line, once cache-backup.sh returns.
+    printf '%s /usr/local/bin/cache-backup.sh >> /proc/1/fd/1 2>&1; . /usr/local/bin/cache-lib.sh; cache_signal_status_refresh\n' "$spec" > /etc/crontabs/root
     echo "Scheduled cache backup: crontab '$spec' (base ${CACHE_BACKUP_SCHEDULE} ${CACHE_BACKUP_TIME}, jitter up to ${CACHE_BACKUP_JITTER_MINUTES} min)"
     crond -b -l 8 -L /dev/stdout
 }
@@ -139,19 +142,24 @@ rm -f "$READY_FILE"
 case "$(printf '%s' "$CACHE_RESTORE_MODE" | tr '[:upper:]' '[:lower:]')" in
     background|async)
         echo "Cache restore runs in the background (CACHE_RESTORE_MODE=$CACHE_RESTORE_MODE)"
-        /usr/local/bin/cache-restore.sh &
+        # cache-restore.sh drops to the nginx user (su-exec) and so cannot
+        # signal health-monitor.sh itself; refresh /status from this root
+        # shell once it exits, same reasoning as start_backup_scheduler below.
+        ( /usr/local/bin/cache-restore.sh; cache_signal_status_refresh ) &
         ;;
     hybrid)
         export CACHE_RESTORE_BLOCKING_MAX_BYTES="${CACHE_RESTORE_BLOCKING_MAX_BYTES:-2g}"
         echo "Cache restore: nginx starts once the newest $CACHE_RESTORE_BLOCKING_MAX_BYTES have landed (CACHE_RESTORE_MODE=hybrid); the rest continues in the background"
-        /usr/local/bin/cache-restore.sh &
+        ( /usr/local/bin/cache-restore.sh; cache_signal_status_refresh ) &
         restore_pid=$!
         while [ ! -f "$READY_FILE" ] && kill -0 "$restore_pid" 2>/dev/null; do sleep 2; done
+        cache_signal_status_refresh
         ;;
     *)
         export CACHE_RESTORE_BLOCKING_MAX_BYTES=0
         echo "Cache restore runs before nginx starts (CACHE_RESTORE_MODE=$CACHE_RESTORE_MODE); port 80 stays closed until it finishes"
         /usr/local/bin/cache-restore.sh || echo "cache-restore.sh exited with status $?; starting nginx anyway"
+        cache_signal_status_refresh
         ;;
 esac
 start_backup_scheduler

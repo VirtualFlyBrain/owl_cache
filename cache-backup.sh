@@ -55,7 +55,6 @@ bytes_done=0
 finish() {
     cache_write_state "$STATE_FILE" "$1" "$files_done" "$bytes_done" "$started" "$(date +%s)" "$2"
     cache_log "backup: $1 -- $2"
-    cache_signal_status_refresh
 }
 
 if [ ! -d "$CACHE_ARCHIVE_DIR" ]; then
@@ -97,7 +96,6 @@ fi
 
 cache_log "backup: $total_files entries ($total_bytes bytes) changed since last backup; waiting for archive lock"
 cache_write_state "$STATE_FILE" waiting 0 0 "$started" "" "waiting for lock ($total_files files pending)"
-cache_signal_status_refresh
 
 if ! cache_lock_acquire "$CACHE_BACKUP_LOCK_WAIT"; then
     finish skipped "another instance held the archive lock for more than ${CACHE_BACKUP_LOCK_WAIT} min; will retry next run"
@@ -106,7 +104,6 @@ fi
 trap 'cache_lock_release; rm -rf "$work"' EXIT
 
 cache_write_state "$STATE_FILE" running 0 0 "$started" "" "0/$total_files files"
-cache_signal_status_refresh
 mkdir -p "$DST"
 # Batch files in listing order (awk rather than split: BusyBox builds differ
 # in whether split is present, and this keeps the newest-first order).
@@ -129,7 +126,6 @@ for batch in "$work"/batch.*; do
     bytes_done=$(( bytes_done + $(awk '{ s += $1 } END { print s + 0 }' "$batch") ))
     rm -f "$batch" "$batch.paths"
     cache_write_state "$STATE_FILE" running "$files_done" "$bytes_done" "$started" "" "$files_done/$total_files files"
-    cache_signal_status_refresh
 done
 
 cp -p "$new_marker" "$MARKER"

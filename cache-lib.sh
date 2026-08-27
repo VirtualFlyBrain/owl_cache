@@ -30,8 +30,16 @@ CACHE_LOCK_STALE_MINUTES="${CACHE_LOCK_STALE_MINUTES:-360}"
 # or empty archive the whole run can complete inside one poll gap, which is
 # exactly what made a CI check race against it. cache_signal_status_refresh
 # asks health-monitor.sh to re-embed the state files immediately instead of
-# waiting for the next tick; it is a silent no-op when health-monitor.sh
-# is not running (standalone script runs, unit tests).
+# waiting for the next tick; it is a silent no-op when health-monitor.sh is
+# not running (standalone script runs, unit tests).
+#
+# health-monitor.sh always runs as root. cache-restore.sh/cache-backup.sh
+# drop to the nginx user (su-exec) before doing anything else, and a
+# non-root process may not signal a root-owned one -- calling this from
+# inside either script would silently do nothing. So it is only ever called
+# from a root context: docker-entrypoint.sh (after cache-restore.sh returns)
+# and the crontab line start_backup_scheduler installs (after cache-backup.sh
+# returns, in the same crond-invoked root shell).
 CACHE_HEALTH_MONITOR_PID_FILE="${CACHE_HEALTH_MONITOR_PID_FILE:-$CACHE_STATE_DIR/health-monitor.pid}"
 cache_signal_status_refresh() {
     [ -f "$CACHE_HEALTH_MONITOR_PID_FILE" ] || return 0
