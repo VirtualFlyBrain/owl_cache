@@ -64,6 +64,17 @@ http {
         include /etc/nginx/blocked-ips*.map;
     }
 
+    # The interactive API documentation (/ and /docs.json, served by
+    # vfbquery >= 1.22.42) is generated in-memory by the upstream from its
+    # *running* version, so it must never be cached: a cached copy would
+    # keep naming — and documenting — a vfbquery release that is no longer
+    # deployed, for up to CACHE_STALE_TIME after every upgrade. Both
+    # responses are tiny and cost the upstream nothing to serve fresh.
+    map $request_uri $is_api_docs {
+        default 0;
+        ~^/(?:docs\.json)?(?:\?.*)?$ 1;
+    }
+
     # Whitelist wins over blocklist and probe detection.
     map "$is_whitelisted_ip:$is_blocked_ip" $should_block_ip {
         default 0;
@@ -186,7 +197,8 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
-            proxy_cache_bypass $force_refresh;
+            proxy_cache_bypass $force_refresh $is_api_docs;
+            proxy_no_cache $is_api_docs;
             proxy_cache owlery_cache;
         }
     }
@@ -250,7 +262,8 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
-            proxy_cache_bypass $force_refresh;
+            proxy_cache_bypass $force_refresh $is_api_docs;
+            proxy_no_cache $is_api_docs;
             proxy_cache owlery_cache;
         }
     }
