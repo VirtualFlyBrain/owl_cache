@@ -108,6 +108,14 @@ http {
         "~*^1:(true|1|yes|on)$" 1;
     }
 
+    # v2 user uploads (VFBu_<id>): an upload's record changes within minutes ("processing", then the neuron
+    # matches, then everything) and is deleted after a year, so it is never cached: always fetched from upstream
+    # and never stored, whatever the request (get_term_info, run_query, ...). Only uploads have VFBu_ ids.
+    map $request_uri $is_upload_term {
+        default 0;
+        "~VFBu_" 1;
+    }
+
     proxy_cache_valid 200 ${CACHE_STALE_TIME};
     proxy_cache_valid 400 ${CACHE_STALE_TIME};
     # Note: 404 is intentionally NOT listed here. Caching a transient
@@ -186,7 +194,8 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
-            proxy_cache_bypass $force_refresh;
+            proxy_cache_bypass $force_refresh $is_upload_term;
+            proxy_no_cache $is_upload_term;
             proxy_cache owlery_cache;
         }
     }
@@ -250,7 +259,8 @@ http {
             add_header X-Cache-Status $upstream_cache_status;
             add_header X-Cache-Key "$request_method$request_uri";
             proxy_ignore_headers Cache-Control Expires Set-Cookie;
-            proxy_cache_bypass $force_refresh;
+            proxy_cache_bypass $force_refresh $is_upload_term;
+            proxy_no_cache $is_upload_term;
             proxy_cache owlery_cache;
         }
     }
